@@ -20,10 +20,10 @@ sans app officielle : protocole **YNC** (Yamaha Network Control) reverse-enginee
 > (`:8080`) et injection IR `Remote_Signal`.
 
 ```
-┌────────────────┐                                        ┌─────────────────────┐
-│   Navigateur   │                                        │  Serveur DLNA/UPnP  │
-│  (page ctrl)   │                                        │  (NAS, MiniDLNA…)   │
-└───────┬────────┘                                        └──────────▲──────────┘
+┌────────────────┐                                         ┌───────────────────┐
+│   Navigateur   │                                         │ Serveur DLNA/UPnP │
+│  (page ctrl)   │                                         │ (NAS, MiniDLNA…)  │
+└───────┬────────┘                                         └────────▲─────────┘
         │  HTTP                                                     ┆ optionnel
         │  page + API JSON                                          ┆ (stream audio)
         │                                                           ┆
@@ -342,9 +342,10 @@ télécommande physique RAX31 émet bien sur 7F.01.
                          #   rendering, connectionmanager)
 ```
 
-Fichiers **non distribués** (propriété Yamaha/tiers, gardés en local,
-gitignorés) : le manuel `R-N301_om_G.pdf`, la doc `Remote_Control_Code.pdf`,
-`manual.txt`.
+Fichiers **non distribués** (propriété Yamaha/tiers, absents du repo) : le
+manuel `R-N301_om_G.pdf`, la doc `Remote_Control_Code.pdf`, l'APK NP Controller
+— à retélécharger/recharger soi-même si besoin (procédure ci-dessous pour
+l'APK).
 
 Pour reproduire l'analyse de l'app officielle : téléchargez l'APK
 **NP Controller v4.60** sur
