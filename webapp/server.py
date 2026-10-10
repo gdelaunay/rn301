@@ -14,6 +14,7 @@ import json
 import os
 import queue
 import re
+import sys
 import threading
 import traceback
 import urllib.request
@@ -461,7 +462,27 @@ def main():
             gena = None
             print(f"GENA indisponible ({e}) — polling 4 s uniquement")
 
-    srv = ThreadingHTTPServer((args.host, args.port), Handler)
+    class _QuietServer(ThreadingHTTPServer):
+        """ThreadingHTTPServer qui avale le bruit des fermetures de connexions.
+
+        Quand un navigateur ferme un flux SSE (ou change d'onglet), le recv du
+        thread serveur lève ConnectionAborted/Reset (WinError 10053/10054) ;
+        socketserver print alors un traceback complet alors que le serveur se
+        porte très bien. On log seulement ce qui n'est pas une déconnexion.
+        """
+        daemon_threads = True    # ne pas bloquer le shutdown sur un client fantôme
+
+        def handle_error(self, request, client_address):
+            exc = sys.exc_info()[1]
+            # Déconnexion client (fermeture d'un flux SSE, onglet qui change…) :
+            # ConnectionError couvre 10053/10054 ; on filtre aussi par errno pour
+            # ne rien avaler d'autre qu'un aborted/reset.
+            aborted = getattr(exc, "errno", None) in (10053, 10054)  # WSAECONNABORTED/RESET
+            if isinstance(exc, (ConnectionError, BrokenPipeError)) or aborted:
+                return                 # déconnexion normale : silencieux
+            super().handle_error(request, client_address)
+
+    srv = _QuietServer((args.host, args.port), Handler)
     print(f"R-N301 web: http://localhost:{args.port}  (ampli: {args.amp})")
     try:
         srv.serve_forever()
