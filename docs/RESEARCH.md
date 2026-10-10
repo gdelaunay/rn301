@@ -44,8 +44,8 @@ commandes par modèle (une Activity par famille : `MainRN500` pour R-N500/R-N301
 Cursor, Line, Jump), `Net_Radio Play_Info` (Station_Name, Song, Album...), `SERVER Play_Info`,
 `Network Setup` (IP/DNS/MAC filter), `Sleep` (?), `Remote_Signal` (?!), `Network_Standby`.
 
-> 💡 `Remote_Signal` est intrigant : possiblement une commande pour injecter des
-> signaux de télécommande via YNC — **à creuser, ce serait le jackpot pour balance/A-B !**
+> 💡 `Remote_Signal` : CONFIRMÉ. L'app l'utilise pour les touches Shuffle/Repeat
+> (non pilotables en YNC classique). Voir section dédiée plus bas.
 
 ### ❌ Confirmé inexistantes via YNC (sondage live → HTTP 400 + absentes du code de l'app)
 - Balance (`Sound_Video/Balance`, `Balance`, variantes) 
@@ -68,8 +68,26 @@ Pas d'entrée IR (REMOTE IN) au dos non plus — juste le capteur IR en façade.
 - L'app parle aussi UPnP/DLNA (`:49154/MediaRenderer/desc.xml`) pour le streaming
   local (service AIDL `com.yamaha.av.localfilecontroller` = lecture des fichiers du téléphone).
 
+## Remote_Signal — injection de touches télécommande via YNC ✅ CONFIRMÉ
+
+```xml
+<YAMAHA_AV cmd="PUT"><System><Misc><Remote_Signal><Receive><Code>7F0146B9</Code>
+</Receive></Remote_Signal></Misc></System></YAMAHA_AV>
+```
+
+- Testé en live : **RC="0"** (accepté), contrairement aux commandes inconnues → HTTP 400.
+- Usage dans l'app (`com/yamaha/npcontroller/b/t.java` + `d/ao.java`) :
+  - `7F0146B9` = touche **SHUFFLE** (`q.e("On"/"Off")`, op 4100)
+  - `7F0145BA` = touche **REPEAT** (`q.d("Single"/"All"/"Off")`, op 4099)
+- **Format du code découvert** : `7F01` (préfixe Yamaha) + `XX` (touche) + `~XX` (complément).
+  Vérif : `0x46 XOR 0xB9 = 0xFF`, `0x45 XOR 0xBA = 0xFF`.
+  → **Seulement 256 codes possibles**, brute-force trivial.
+  Codes connus : `0x46` = Shuffle, `0x45` = Repeat.
+- `tools/scan_remote.py` : scanne les 256 codes en observant power/volume/input/mute via YNC.
+  Les effets non observables (Balance, Speaker A/B, menus) demandent une vérif visuelle/auditive.
+
 ## Options pour balance / Speaker A-B
-1. **`Remote_Signal`** — explorer cette commande YNC trouvée dans le code de l'app (priorité !)
+1. **`Remote_Signal`** — ✅ piste validée, reste à trouver les codes des touches (scan des 256)
 2. **IR physique** — un ESP32 + LED IR pointé vers le capteur de façade, en rejouant les
    codes de la télécommande (protocole NEC Yamaha). Il faut capturer les codes avec un
    récepteur IR (VS1838B) ou trouver une base de codes (LIRC / remotes centra).
