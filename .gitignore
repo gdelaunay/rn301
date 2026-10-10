@@ -1,0 +1,7 @@
+apk/extracted/
+apk/decompiled/
+.venv/
+__pycache__/
+*.pyc
+manual.txt
+desc.xml
