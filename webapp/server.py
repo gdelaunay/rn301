@@ -1,0 +1,496 @@
+"""Serveur web de contrôle pour le Yamaha R-N301.
+
+100 % stdlib. API JSON + page de contrôle intégrée.
+
+Usage:
+    .venv/Scripts/python -m webapp.server [--amp 192.168.1.91] [--port 8080]
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import traceback
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
+
+from rn301 import RN301, YNCError
+
+amp: RN301  # initialisé dans main()
+
+INDEX_HTML = """<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yamaha R-N301</title>
+<style>
+:root{--bg:#101418;--card:#1a2028;--acc:#4fc3f7;--txt:#e8eef2;--dim:#8a99a8;--red:#ef5350;--grn:#66bb6a}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--txt);font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:1.2rem;color:var(--acc);margin-bottom:4px}
+.sub{color:var(--dim);font-size:.8rem;margin-bottom:16px}
+.card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{background:#263040;color:var(--txt);border:1px solid #35445a;border-radius:8px;padding:10px 14px;font-size:.95rem;cursor:pointer;transition:.15s}
+button:hover{border-color:var(--acc);color:var(--acc)}
+button:active{transform:scale(.96)}
+button.on{background:var(--acc);color:#08111a;border-color:var(--acc);font-weight:600}
+button.pwr.on{background:var(--grn);border-color:var(--grn)}
+button.big{font-size:1.3rem;padding:12px 20px}
+input[type=range]{flex:1;accent-color:var(--acc);height:28px}
+.volval{min-width:52px;text-align:center;font-variant-numeric:tabular-nums;font-weight:600}
+.src{flex:1 1 30%;text-align:center}
+.now{display:flex;gap:12px;align-items:center}
+.now img{width:72px;height:72px;border-radius:8px;background:#000;object-fit:cover}
+.now .t{font-weight:600}
+.now .s{color:var(--dim);font-size:.85rem}
+.list{font-size:.9rem}
+.list .li{padding:7px 10px;border-radius:6px;display:flex;gap:8px;cursor:pointer}
+.list .li:hover{background:#263040}
+.list .li.sel{background:#2a3b50;color:var(--acc)}
+.list .li.un{color:var(--dim);cursor:default}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;background:#263040;color:var(--dim);font-size:.72rem}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--red);color:#fff;padding:8px 16px;border-radius:8px;font-size:.85rem;opacity:0;pointer-events:none;transition:.3s}
+#toast.show{opacity:1}
+.lbl{color:var(--dim);font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.gap{height:8px}
+details summary{cursor:pointer;color:var(--dim);font-size:.85rem}
+</style>
+</head>
+<body>
+<h1>🎛️ Yamaha R-N301</h1>
+<div class="sub" id="sysinfo">connexion…</div>
+
+<div class="card">
+  <div class="row">
+    <button class="big pwr" id="btnPower" onclick="api('power',{},true)">⏻</button>
+    <div style="flex:1"></div>
+    <button id="btnMute" onclick="api('mute',{},true)">🔇 Mute</button>
+  </div>
+  <div class="gap"></div>
+  <div class="row">
+    <button onclick="vol(-2)">−</button>
+    <input type="range" id="vol" min="0" max="80" step="1" onchange="api('volume',{val:this.value})">
+    <button onclick="vol(+2)">＋</button>
+    <span class="volval" id="volval">--</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="lbl">Source</div>
+  <div class="row" id="sources"></div>
+</div>
+
+<div class="card" id="nowcard" style="display:none">
+  <div class="lbl">Lecture <span class="badge" id="playstate"></span></div>
+  <div class="now">
+    <img id="art" style="display:none" alt="">
+    <div>
+      <div class="t" id="npTitle"></div>
+      <div class="s" id="npSub"></div>
+    </div>
+  </div>
+  <div class="gap"></div>
+  <div class="row">
+    <button onclick="api('playback',{action:'Skip Rev'})">⏮</button>
+    <button class="big" onclick="api('playback',{action:togglePlay()})" id="btnPlay">▶</button>
+    <button onclick="api('playback',{action:'Skip Fwd'})">⏭</button>
+    <button onclick="api('playback',{action:'Stop'})">⏹</button>
+    <div style="flex:1"></div>
+    <button id="btnShuffle" onclick="api('playmode',{what:'shuffle',value:shuffleNext()})">🔀</button>
+    <button id="btnRepeat" onclick="api('playmode',{what:'repeat',value:repeatNext()})">🔁</button>
+  </div>
+</div>
+
+<div class="card" id="tunercard" style="display:none">
+  <div class="lbl">Tuner <span class="badge" id="tunerinfo"></span></div>
+  <div class="row">
+    <button onclick="api('tuner',{op:'step',band:band,dir:'Down'})">◀</button>
+    <select id="bandsel" onchange="band=this.value;refresh()"><option>FM</option><option>AM</option></select>
+    <button onclick="api('tuner',{op:'step',band:band,dir:'Up'})">▶</button>
+    <button onclick="api('tuner',{op:'search',band:band,dir:'Up'})">🔍 Auto</button>
+    <input type="number" id="freq" step="0.1" style="width:90px;background:#0d1117;color:var(--txt);border:1px solid #35445a;border-radius:6px;padding:8px">
+    <button onclick="api('tuner',{op:'tune',band:band,freq:document.getElementById('freq').value})">Go</button>
+  </div>
+  <div class="gap"></div>
+  <div class="row" id="presets"></div>
+</div>
+
+<div class="card" id="listcard" style="display:none">
+  <div class="lbl">Navigateur <span class="badge" id="menuname"></span></div>
+  <div class="list" id="menu"></div>
+  <div class="gap"></div>
+  <div class="row">
+    <button onclick="api('cursor',{dir:'Return'})">↩ Retour</button>
+    <button onclick="api('cursor',{dir:'Up'})">▲</button>
+    <button onclick="api('cursor',{dir:'Down'})">▼</button>
+    <button onclick="api('cursor',{dir:'Sel'})">OK</button>
+  </div>
+</div>
+
+<div class="card">
+  <details>
+    <summary>⚙️ Système</summary>
+    <div class="gap"></div>
+    <div class="row">
+      <button id="btnNetStdby" onclick="api('netstandby',{},true)">Network Standby</button>
+      <span class="badge" id="netname"></span>
+    </div>
+    <div class="gap"></div>
+    <div class="row">
+      <span class="lbl" style="margin:0">Touche IR</span>
+      <button onclick="api('remote',{key:'net_cycle'})">Cycle réseau</button>
+      <button onclick="api('remote',{key:'shuffle'})">Shuffle IR</button>
+      <button onclick="api('remote',{key:'repeat'})">Repeat IR</button>
+    </div>
+    <div class="gap"></div>
+    <div class="lbl" style="margin:0">Sleep / Gapless / Device_Name : non supportés par ce firmware en YNC</div>
+  </details>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let state={}, band='FM', shuffle=false, repeat='Off', playing=false;
+
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
+async function api(action,body,norefresh){
+  try{
+    const r=await fetch('/api/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});
+    const j=await r.json();
+    if(!r.ok||j.error) throw new Error(j.error||r.status);
+    if(j.state) render(j.state);
+  }catch(e){toast('⚠ '+e.message);}
+  if(!norefresh) refresh();
+}
+function vol(d){const v=Math.max(0,Math.min(80,(state.volume||0)+d));api('volume',{val:v});}
+function togglePlay(){return playing?'Pause':'Play';}
+function shuffleNext(){shuffle=!shuffle;return shuffle?'On':'Off';}
+function repeatNext(){repeat=repeat==='Off'?'All':repeat==='All'?'One':'Off';return repeat;}
+
+async function refresh(){
+  try{
+    const r=await fetch('/api/state'); const j=await r.json();
+    if(j.state) render(j.state);
+  }catch(e){document.getElementById('sysinfo').textContent='ampli injoignable';}
+}
+
+function render(s){
+  state=s;
+  const on=s.power==='On';
+  document.getElementById('sysinfo').textContent=`${s.model||'R-N301'} · v${s.version||'?'} · ${on?'🟢 allumé':'⚫ veille'}`;
+  const bp=document.getElementById('btnPower'); bp.classList.toggle('on',on);
+  document.getElementById('btnMute').classList.toggle('on',s.mute==='On');
+  document.getElementById('vol').value=s.volume??0;
+  document.getElementById('volval').textContent=on?(s.volume??'--'):'--';
+
+  // sources
+  const sc=document.getElementById('sources');
+  if(!sc.children.length && s.inputs){
+    s.inputs.forEach(i=>{
+      const b=document.createElement('button'); b.className='src'; b.textContent=i.value;
+      b.onclick=()=>api('input',{val:i.value}); sc.appendChild(b);
+    });
+  }
+  [...sc.children].forEach(b=>b.classList.toggle('on',b.textContent===s.input));
+
+  // now playing (sources réseau)
+  const inp=(s.input||'').toUpperCase();
+  const net=['NET RADIO','SERVER','SPOTIFY','AIRPLAY'].includes(inp);
+  const pi=s.play_info||{};
+  const nc=document.getElementById('nowcard');
+  if(on&&net&&pi.available!=='Not Ready'){
+    nc.style.display='';
+    playing=(pi.playback||'')==='Play';
+    document.getElementById('btnPlay').textContent=playing?'⏸':'▶';
+    const m=pi.meta||{};
+    document.getElementById('npTitle').textContent=m.song||m.station||'—';
+    document.getElementById('npSub').textContent=[m.artist,m.album].filter(Boolean).join(' · ');
+    document.getElementById('playstate').textContent=pi.playback||'';
+    const art=document.getElementById('art');
+    if(pi.album_art){art.src='/art?url='+encodeURIComponent(pi.album_art);art.style.display='';}
+    else art.style.display='none';
+    if(pi.shuffle!==undefined){shuffle=pi.shuffle==='On';document.getElementById('btnShuffle').classList.toggle('on',shuffle);}
+    if(pi.repeat!==undefined){repeat=pi.repeat;document.getElementById('btnRepeat').classList.toggle('on',repeat!=='Off');document.getElementById('btnRepeat').textContent=repeat==='One'?'🔂':'🔁';}
+  } else nc.style.display='none';
+
+  // tuner
+  const tc=document.getElementById('tunercard');
+  if(on&&inp==='TUNER'){
+    tc.style.display='';
+    const f=pi.freq, u=pi.freq_unit;
+    document.getElementById('tunerinfo').textContent=
+      `${pi.band||'?'} ${f?(u==='MHz'?(f/100).toFixed(2)+' MHz':f+' kHz'):''} ${pi.tuned==='Positive'?'✓':''} ${pi.stereo==='Positive'?'stereo':''}`;
+    band=pi.band||'FM'; document.getElementById('bandsel').value=band;
+    document.getElementById('freq').value=band==='FM'?(f/100).toFixed(2):f;
+    const ps=document.getElementById('presets');
+    if(!ps.children.length){for(let n=1;n<=8;n++){const b=document.createElement('button');b.textContent=n;b.onclick=()=>api('tuner',{op:'preset',n});ps.appendChild(b);}}
+  } else tc.style.display='none';
+
+  // navigateur liste SERVER / NET RADIO
+  const lc=document.getElementById('listcard');
+  const li=s.list_info;
+  if(on&&li&&li.menu_status==='Ready'&&li.lines&&li.lines.length){
+    lc.style.display='';
+    document.getElementById('menuname').textContent=li.menu_name||('layer '+li.menu_layer);
+    const menu=document.getElementById('menu'); menu.innerHTML='';
+    const cur=parseInt(li.cursor_line||'0');
+    li.lines.forEach(l=>{
+      if(!l.txt&&l.attribute==='Unselectable')return;
+      const d=document.createElement('div');
+      d.className='li'+(l.line===cur?' sel':'')+(l.attribute==='Unselectable'?' un':'');
+      d.textContent=(l.line===cur?'▸ ':'')+l.txt;
+      if(l.attribute!=='Unselectable')d.onclick=()=>api('line',{n:l.line});
+      menu.appendChild(d);
+    });
+  } else lc.style.display='none';
+
+  // système
+  document.getElementById('btnNetStdby').classList.toggle('on',s.net_standby==='On');
+  if(s.net_name)document.getElementById('netname').textContent=s.net_name;
+}
+
+refresh(); setInterval(refresh,4000);
+</script>
+</body>
+</html>
+"""
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "RN301Web/1.0"
+
+    def log_message(self, fmt, *args):
+        pass  # silencieux
+
+    # ---------------------------------------------------------------- helpers
+
+    def _send(self, code: int, body: bytes, ctype: str):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, obj, code=200):
+        self._send(code, json.dumps(obj, ensure_ascii=False).encode(), "application/json; charset=utf-8")
+
+    def _body(self) -> dict:
+        n = int(self.headers.get("Content-Length") or 0)
+        if not n:
+            return {}
+        try:
+            return json.loads(self.rfile.read(n) or b"{}")
+        except json.JSONDecodeError:
+            return {}
+
+    def full_state(self) -> dict:
+        """Agrège l'état ampli pour l'UI (plusieurs GET, un par chemin)."""
+        try:
+            st = amp.basic_status()
+        except YNCError as e:
+            return {"error": str(e)}
+        out = dict(st)
+        try:
+            cfg = amp.system_config()
+            out["model"], out["version"] = cfg["model"], cfg["version"]
+        except YNCError:
+            pass
+        # inputs (cache : la liste ne change pas)
+        if not getattr(amp, "_inputs_cache", None):
+            try:
+                amp._inputs_cache = amp.list_inputs()
+            except YNCError:
+                amp._inputs_cache = []
+        out["inputs"] = amp._inputs_cache
+        # infos source réseau / tuner (Input_Sel renvoie 'NET RADIO', 'TUNER'... en majuscules)
+        net_sources = ("NET RADIO", "SERVER", "SPOTIFY", "AIRPLAY", "TUNER")
+        if (out.get("input") or "").upper() in net_sources:
+            try:
+                out["play_info"] = amp.play_info(out["input"])
+            except YNCError:
+                out["play_info"] = None
+            if out["input"].upper() in ("SERVER", "NET RADIO"):
+                try:
+                    out["list_info"] = amp.list_info(out["input"])
+                except YNCError:
+                    out["list_info"] = None
+        # réglages système (Network_Standby/Name sous System/Misc/Network sur ce firmware)
+        for key, fn in (("net_standby", amp.get_network_standby),
+                        ("net_name", amp.get_network_name)):
+            try:
+                out[key] = fn()
+            except YNCError:
+                out[key] = None
+        return out
+
+    # ---------------------------------------------------------------- routes
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if path in ("/", "/index.html"):
+            self._send(200, INDEX_HTML.encode(), "text/html; charset=utf-8")
+        elif path == "/api/state":
+            self._json({"state": self.full_state()})
+        elif path == "/api/inputs":
+            try:
+                self._json({"inputs": amp.list_inputs()})
+            except YNCError as e:
+                self._json({"error": str(e)}, 502)
+        elif path == "/api/config":
+            try:
+                self._json(amp.system_config())
+            except YNCError as e:
+                self._json({"error": str(e)}, 502)
+        elif path == "/art":
+            # proxy pochette d'album (l'URL est relative à l'ampli)
+            from urllib.parse import urlparse as _up, parse_qs as _pq
+            url = (_pq(_up(self.path).query).get("url") or [""])[0]
+            if not url:
+                self._json({"error": "url requise"}, 400)
+                return
+            if url.startswith("/"):
+                url = f"http://{amp.url.split('/')[2]}{url}"
+            try:
+                with urllib.request.urlopen(url, timeout=5) as r:
+                    data = r.read()
+                    ctype = r.headers.get("Content-Type", "image/jpeg")
+                self._send(200, data, ctype)
+            except OSError:
+                self._json({"error": "image injoignable"}, 502)
+        else:
+            self._json({"error": "not found"}, 404)
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        body = self._body()
+        try:
+            result = self.dispatch(path, body)
+        except YNCError as e:
+            self._json({"error": f"ampli: {e}"}, 502)
+            return
+        except (ValueError, KeyError, TypeError) as e:
+            self._json({"error": f"paramètre invalide: {e}"}, 400)
+            return
+        except Exception:
+            traceback.print_exc()
+            self._json({"error": "erreur interne"}, 500)
+            return
+        if isinstance(result, dict):
+            self._json(result)
+        else:
+            self._json({"ok": True, "state": self.full_state()})
+
+    def dispatch(self, path: str, body: dict):
+        """Une route = une commande documentée. Retourne dict brut ou None (+state)."""
+        match path:
+            # --- zone principale
+            case "/api/power":
+                if "on" in body:
+                    amp.set_power(bool(body["on"]))
+                else:
+                    return {"ok": True, "power": amp.toggle_power(), "state": self.full_state()}
+            case "/api/volume":
+                if "val" in body:
+                    amp.set_volume(int(body["val"]))
+                elif "delta" in body:
+                    d = int(body["delta"])
+                    amp.volume_up(d) if d > 0 else amp.volume_down(-d)
+                else:
+                    raise ValueError("volume: 'val' ou 'delta' requis")
+            case "/api/mute":
+                if "on" in body:
+                    amp.set_mute(bool(body["on"]))
+                else:
+                    return {"ok": True, "mute": amp.toggle_mute(), "state": self.full_state()}
+            case "/api/input":
+                amp.set_input(body["val"])
+            # --- lecture
+            case "/api/playback":
+                amp.playback(body.get("source", amp.get_input()), body.get("action", "Play"))
+            case "/api/playmode":
+                src = body.get("source", amp.get_input())
+                if body.get("what") == "shuffle":
+                    amp.set_shuffle(src, str(body.get("value", "On")).lower() == "on")
+                else:
+                    amp.set_repeat(src, body.get("value", "Off"))
+            case "/api/list":
+                return {"ok": True, "list": amp.list_info(body.get("source", amp.get_input()))}
+            case "/api/cursor":
+                amp.cursor(body.get("source", amp.get_input()), body.get("dir", "Down"))
+            case "/api/page":
+                amp.page(body.get("source", amp.get_input()), body.get("dir", "Down"))
+            case "/api/line":
+                amp.select_line(body.get("source", amp.get_input()), int(body["n"]))
+            case "/api/jump":
+                # non supporté par le firmware (HTTP 400) — conservé pour mémoire
+                amp.jump_line(body.get("source", amp.get_input()), int(body["line"]))
+            # --- tuner
+            case "/api/tuner":
+                op = body.get("op", "tune")
+                if op == "tune":
+                    amp.tune(body.get("band", "FM"), body["freq"])
+                elif op == "band":
+                    amp.set_band(body.get("band", "FM"))
+                elif op == "step":
+                    amp.tuning_step(body.get("dir", "Up"))
+                elif op == "preset":
+                    amp.select_preset(int(body["n"]))
+                elif op == "preset_step":
+                    amp.select_preset(body.get("dir", "Up"))
+                elif op == "search":
+                    amp.auto_search(body.get("band", "FM"), body.get("dir", "Up"))
+                else:
+                    raise ValueError(f"op tuner inconnue: {op}")
+            # --- système (sleep/gapless/device_name : non supportés par ce firmware)
+            case "/api/netstandby":
+                cur = amp.get_network_standby()
+                on = bool(body["on"]) if "on" in body else cur != "On"
+                amp.set_network_standby(on)
+                return {"ok": True, "net_standby": "On" if on else "Off", "state": self.full_state()}
+            case "/api/netname":
+                amp.set_network_name(body["name"])
+            case "/api/macfilter":
+                amp.set_mac_filter(body.get("mode", "Off"),
+                                   *[body.get(f"a{i}") for i in range(1, 7)])
+            case "/api/update":
+                amp.firmware_update_start()
+            case "/api/systempower":
+                amp.system_power(bool(body.get("on", True)))
+            # --- IR virtuel
+            case "/api/remote":
+                if "code" in body:
+                    amp.remote_signal(body["code"])
+                else:
+                    amp.remote_key(body["key"])
+            # --- passe-plat YNC brut (pour explorer)
+            case "/api/raw":
+                root = amp._request(body.get("cmd", "GET").upper(), body["xml"])
+                import xml.etree.ElementTree as ET
+                return {"ok": True, "rsp": ET.tostring(root, encoding="unicode")}
+            case _:
+                return {"error": "not found"}
+        return None
+
+
+def main():
+    p = argparse.ArgumentParser(description="Serveur web Yamaha R-N301")
+    p.add_argument("--amp", default="192.168.1.91", help="IP de l'ampli")
+    p.add_argument("--port", type=int, default=8080)
+    p.add_argument("--host", default="0.0.0.0")
+    args = p.parse_args()
+
+    global amp
+    amp = RN301(args.amp)
+
+    srv = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"R-N301 web: http://localhost:{args.port}  (ampli: {args.amp})")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nbye")
+
+
+if __name__ == "__main__":
+    main()

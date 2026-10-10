@@ -6,12 +6,27 @@ Enveloppe : `<YAMAHA_AV cmd="GET|PUT">…</YAMAHA_AV>` — lecture de valeur : t
 ## Quirks du firmware R-N301 (Network_Player/3.1)
 1. **Une seule requête par POST** : plusieurs chemins combinés → HTTP 400 corps vide.
 2. **Chemins exacts uniquement** : les GET de sous-éléments échouent souvent
-   (ex `<Play_Info><Station_Name>GetParam` → 400). GET du bloc complet et parsing.
+   (ex `<Play_Info><Station_Name>GetParam` → 400, `Volume/Lvl/Val` GET → 400 aléatoire).
+   → GET du bloc complet (`Basic_Status`, `Play_Info`) et parsing. C'est ce que fait la lib.
 3. **Instable quand occupé** : réponses vides/400 aléatoires si l'ampli est sollicité
-   ailleurs → toujours prévoir retry (3×, 500 ms).
-4. Orthographe des sources : `NET_RADIO`, `SERVER`, `Spotify`, `AirPlay`, `Tuner`,
-   `iPod_USB`, `USB` (tel que renvoyé par Input_Sel_Item).
-5. Pas de desc.xml / UnitDesc.xml / GETDESC sur ce modèle.
+   ailleurs → toujours prévoir retry (3×).
+4. **RC=3 = "occupé/pas prêt"** : après un changement de source réseau, l'ampli met
+   ~3-5 s avant d'accepter une nouvelle commande. Des retries trop rapprochés
+   semblent entretenir l'état occupé → la lib retry avec délai de 5 s.
+5. Orthographe des sources (Input_Sel) : `NET RADIO` (avec espace !), `SERVER`,
+   `Spotify`, `AirPlay`, `TUNER` (majuscules — `Tuner` est refusé RC=3), `CD`,
+   `OPTICAL`, `COAXIAL`, `LINE1..3`. Tags XML des sources réseau :
+   `NET_RADIO` (pas `Net_Radio` !), `SERVER`, `Spotify`, `AirPlay`, `Tuner`.
+6. Pas de desc.xml / UnitDesc.xml / GETDESC sur ce modèle.
+7. **Volume : Val 0..80** (validé en live, 100 clampé à 80). Volume relatif
+   `Up/Down N.0 dB` **refusé** (RC=3) → lire + calculer + écrire en absolu.
+8. **Non supportés en YNC** (HTTP 400, validé en live) : `System/Config/Sleep`,
+   `Gapless_Playback`, `Device_Name`, `Tuner FM_Mode`, `Search_Mode` (auto-search),
+   tuning `Up/Down` (fréquences absolues uniquement), preset avec wrapper `<Val>`
+   (valeur directe OK, `Up/Down` OK aussi).
+9. Chemins réseau réels : `System/Misc/Network/Network_Standby`, `Network_Name`,
+   `MAC_Address_Filter` (Mode + `Address/Number_1..6`) — PAS sous `System/Config`
+   ni `System/Network`.
 
 ## ✅ GET validés en live (résultats dans amp/probe_gets.json)
 
@@ -38,36 +53,64 @@ Play_Info répond même quand la source est inactive (`Feature_Availability: Not
 | Fonction | Requête (dans `<YAMAHA_AV cmd="PUT">`) | Valeurs |
 |---|---|---|
 | Power zone | `<Main_Zone><Power_Control><Power>On</Power>…` | On / Standby |
-| Volume absolu | `<Main_Zone><Volume><Lvl><Val>54</Val><Exp>0</Exp><Unit></Unit></Lvl>…` | Val numérique |
-| Volume relatif | …`<Val>Down 1.0 dB</Val>`… | Up/Down 1.0 dB (syntaxe communauté, à re-valider) |
+| Volume absolu | `<Main_Zone><Volume><Lvl><Val>54</Val><Exp>0</Exp><Unit></Unit></Lvl>…` | Val 0..80 |
 | Mute | `<Main_Zone><Volume><Mute>On</Mute>…` | On / Off |
 | Input | `<Main_Zone><Input><Input_Sel>SERVER</Input_Sel>…` | voir liste des 11 inputs |
+| Playback | `<{SRC}><Play_Control><Playback>Play</Playback>…` | Play/Stop/Pause/Skip Fwd/Skip Rev — SRC ∈ NET_RADIO, SERVER, Spotify, AirPlay |
+| Shuffle/Repeat SERVER | `<SERVER><Play_Control><Play_Mode><Shuffle>` / `<Repeat>` | On/Off ; Off/One/All |
+| Navigation liste | `<{SRC}><List_Control><Cursor>` | Up/Down/Left/Right/Return/Sel (NET_RADIO, SERVER) |
+| Page liste | `<{SRC}><List_Control><Page>` | Up/Down |
+| Ligne directe | `<{SRC}><List_Control><Direct_Sel><Line_N>` | Line_1..8 |
+| Tuning FM | `<Tuner><Play_Control><Tuning><Freq><FM><Val>9910</Val><Exp>2</Exp><Unit>MHz</Unit>` | **chemin Freq/FM** (pas FM/Freq !) |
+| Tuning AM | `<Tuner><Play_Control><Tuning><Freq><AM><Val>1197</Val><Exp>0</Exp><Unit>kHz</Unit>` | kHz |
+| Bande | `<Tuner><Play_Control><Tuning><Band>FM</Band>` | FM / AM (GET refusé, lire via Play_Info) |
+| Preset tuner | `<Tuner><Play_Control><Preset><Preset_Sel>3</Preset_Sel>` | 1..40 **ou** Up/Down (pas de `<Val>`) |
+| Network standby | `<System><Misc><Network><Network_Standby>On</Network_Standby>` | On / Off |
+| Nom réseau | `<System><Misc><Network><Network_Name>` | texte |
+| Filtre MAC | `<System><Misc><Network><MAC_Address_Filter><Mode>` + `<Address><Number_1..6>` | Off/… |
 | Injection IR | `<System><Misc><Remote_Signal><Receive><Code>7F0146B9</Code></Receive></Remote_Signal></Misc></System>` | voir section Remote_Signal |
 
-## 🔧 PUT connus via code de l'app (non testés — prudence)
+## ❌ PUT refusés par le firmware (validé en live, HTTP 400 ou RC=3)
 
-Issus de k.java/q.java (docs/ops_brut.txt = table complète des ~90 opérations) :
+Sleep, Gapless_Playback, Device_Name (System/Config/*), FM_Mode, Search_Mode,
+tuning Up/Down, NET_RADIO Play_Mode (Shuffle/Repeat → passer par Remote_Signal),
+`Tuner/Play_Control/Tuning/Band` en GET, `System/Network/*`, preset `<Val>` wrapper.
 
-| Fonction | Chemin PUT |
-|---|---|
-| Playback | `<{source}><Play_Control><Playback>` : Play/Stop/Pause/Skip Fwd/Skip Rev |
-| Mode lecture | `<{source}><Play_Control><Play_Mode><Shuffle>` / `<Repeat>` : On/Off, One/All |
-| Navigation liste | `<{source}><List_Control><Cursor>` : Up/Down/Left/Right/Return/Sel |
-| Page liste | `<{source}><List_Control><Page>` : Up/Down |
-| Ligne directe | `<{source}><List_Control><Direct_Sel><Line_N>` |
-| Saut index | `<{source}><List_Control><Jump_Line><Line>` : entier |
-| Tuning FM | `<Tuner><Play_Control><Tuning><FM><Freq><Val>` (Exp=2, ex 9910 = 99.10 MHz) |
-| Tuning AM | `<Tuner><Play_Control><Tuning><AM><Freq><Val>` (Exp=0, kHz) |
-| Preset tuner | `<Tuner><Play_Control><Preset><Preset_Sel><Val>` : 1..40? |
-| Sleep | `<System><Config><Sleep>` : Off/30/60/90/120 min ? |
-| Network standby | `<System><Config><Network_Standby>` : On/Off |
-| Gapless | `<System><Config><Gapless_Playback>` : On/Off |
-| Nom réseau | `<System><Config><Device_Name>` |
-| Filtre MAC | `<System><Network><MAC_Address_Filter><Mode>` + `<Address_1..5>` |
-| Mise à jour firmware | `<System><Misc><Update><Yamaha_Network_Site>` |
+## 🔧 Jump_Line / Track_Number : NON supportés (testés en live → 400)
 
-⚠️ Certains sont peut-être spécifiques à d'autres modèles de l'app (CD-N301, R-N500,
-CRX-560...) : valider un par un avant usage (le R-N301 répond 400 si non supporté).
+Présents dans k.java/q.java (docs/ops_brut.txt = table des ~90 opérations) mais
+refusés par le firmware R-N301 — spécifiques à d'autres modèles de l'app
+(CD-N301, R-N500, CRX-560...). Idem pour tout ce qui est listé dans la section
+« PUT refusés » ci-dessus.
+
+## 📦 Librairie Python (`rn301/`) + serveur web (`webapp/`)
+
+```python
+from rn301 import RN301
+amp = RN301("192.168.1.91")     # retries + délai RC=3 gérés
+amp.power_on()
+amp.set_volume(50)              # 0..80
+amp.set_input("TUNER")          # majuscules !
+amp.tune_fm(99.1)
+amp.tuning_step("Up")           # calculé côté client (absolus uniquement)
+amp.select_preset(3)            # ou 'Up'/'Down'
+amp.playback("SERVER", "Play")
+amp.select_line("NET RADIO", 5)
+amp.remote_key("shuffle")       # IR virtuel 7F0146B9
+print(amp.basic_status())       # power/volume/mute/input (bloc fiable)
+print(amp.play_info("current"))
+print(amp.list_info("SERVER"))  # menu DLNA 8 lignes + curseur
+```
+
+Serveur web (page de contrôle + API JSON) :
+```
+.venv/Scripts/python -m webapp.server --port 8080
+# -> http://localhost:8080
+```
+Routes API : `/api/state`, `power`, `volume` (val|delta), `mute`, `input`,
+`playback`, `playmode`, `list`, `cursor`, `page`, `line`, `tuner`
+(op: tune|band|step|preset|preset_step), `netstandby`, `netname`, `macfilter`,
+`remote` (key|code), `raw` (cmd+xml), `systempower`, `update`, GET `/art?url=`.
 
 ## 📡 Remote_Signal (injection de touches télécommande)
 
