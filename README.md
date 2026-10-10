@@ -74,8 +74,8 @@ provenance et horodatage des validations live),
 ## 🚀 Démarrage rapide
 
 ```bash
-# librairie — découverte SSDP automatique, pas besoin de connaître l'IP
-python -c "from rn301 import discover_one, RN301; amp=RN301(discover_one()['host']); amp.power_on(); amp.set_volume(25)"
+# dans ce repo (aucune installation nécessaire, zéro dépendance)
+python -c "from rn301 import RN301; amp=RN301('192.168.1.91'); amp.power_on()"
 
 # serveur web (page de contrôle sur http://localhost:8080)
 python -m webapp.server --port 8080 --amp 192.168.1.91
@@ -83,6 +83,23 @@ python -m webapp.server --port 8080 --amp 192.168.1.91
 # tests hors-ligne (aucun ampli requis)
 python -m unittest discover tests
 ```
+
+### 📦 Installer la lib dans un autre projet
+
+```bash
+# uv — path dependency (editable : les modifs de la lib sont visibles direct)
+uv add ../rn301 --editable
+
+# pip classique
+pip install -e ../rn301
+
+# une fois le repo pushé sur un forge :
+uv add git+https://github.com/<user>/rn301
+```
+
+Le package installe aussi deux CLI : `rn301-discover` (scan SSDP → identité
+complète de l'ampli en JSON) et `rn301-gena` (écoute live des events GENA).
+Type hints inclus (`py.typed`).
 
 ## 📦 La librairie `rn301/`
 
@@ -361,5 +378,5 @@ python tools/probe_gets.py      # -> amp/probe_gets.json
 
 ## 📄 Licence
 
-Code du projet : libre (faites-vous plaisir). L'APK et les PDF Yamaha restent
+Code du projet : **MIT** (voir `LICENSE`). L'APK et les PDF Yamaha restent
 la propriété de Yamaha — ne pas redistribuer.
