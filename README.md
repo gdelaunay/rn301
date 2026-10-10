@@ -167,14 +167,15 @@ Speaker A/B, Balance...) via récepteur IR — si leur device ≠ 7F01, il faudr
 ├── docs/
 │   ├── YNC_COMMANDS.md  # référence des commandes validées en live
 │   ├── RESEARCH.md      # journal de reverse engineering
-│   ├── ops_brut.txt     # table des ~90 ops YNC extraites de l'APK
-│   └── Remote_Control_Code.{pdf,txt}  # doc codes IR Yamaha
+│   └── ops_brut.txt     # table des ~90 ops YNC extraites de l'APK
 ├── tools/               # scripts d'analyse (androguard, sondage, scan IR)
-├── amp/                 # réponses live archivées (probe_gets.json, scans IR)
-├── apk/                 # APK dézippé/décompilé (gitignored)
-├── manual.txt           # manuel utilisateur converti
-└── R-N301_om_G.pdf      # manuel d'origine
+└── amp/                 # réponses live archivées (probe_gets.json, scans IR)
 ```
+
+Fichiers **non distribués** (propriété Yamaha/tiers, gardés en local,
+gitignorés) : l'APK *NP Controller v4.60* (téléchargeable sur APKPure),
+le manuel `R-N301_om_G.pdf`, la doc `Remote_Control_Code.pdf`, `manual.txt`.
+Les scripts de `tools/` s'attendent à trouver l'APK à la racine du projet.
 
 ## ⚠️ Avertissements
 
