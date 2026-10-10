@@ -34,6 +34,7 @@ import xml.sax.saxutils as sx
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from ._locks import amp_lock
+from .gena import GenaClient
 
 RENDERER_PORT = 8080
 AVT_NS = "urn:schemas-upnp-org:service:AVTransport:1"
@@ -445,14 +446,23 @@ class PushServer:
 
     push_file()  : sert le fichier via le serveur HTTP intégré puis SetAVTransportURI+Play
     push_url()   : pousse une URL déjà servie sur le LAN (NAS, webradio MP3…)
+
+    Événements de transport (GENA, optionnels et paresseux — rien n'est abonné
+    tant qu'on ne les utilise pas, aucun comportement caché) :
+        on_transport(cb) : cb(state, changed) à chaque NOTIFY du renderer
+        wait_stopped()   : bloque jusqu'à la fin de la piste (scripts synchrones)
+    Chaque push_file() reste indépendant : la lib ne gère AUCUNE file d'attente,
+    c'est le client qui décide quoi pousser ensuite.
     """
 
     def __init__(self, amp: str, serve_host: str = "0.0.0.0", serve_port: int = 9000,
                  renderer_port: int = RENDERER_PORT):
         self.amp = amp
+        self.renderer_port = renderer_port
         self.server = FileServer(serve_host, serve_port)
         self.renderer = Renderer(amp, renderer_port)
         self.last_meta: dict = {}
+        self._gena: GenaClient | None = None
 
     # --- cycle de vie
     def start(self):
@@ -460,6 +470,68 @@ class PushServer:
 
     def stop_server(self):
         self.server.stop()
+
+    def close(self):
+        """Libère tout : désabonnement GENA + arrêt du serveur de fichiers."""
+        if self._gena is not None:
+            self._gena.close()
+            self._gena = None
+        self.server.stop()
+
+    # --- événements de transport (GENA) ---------------------------------
+    # Optionnels, paresseux, passifs : la lib notifie, le client décide.
+
+    _PLAYING = ("PLAYING", "TRANSITIONING", "PAUSED_PLAYBACK")
+    _ENDED = ("STOPPED", "NO_MEDIA_PRESENT")
+
+    def _ensure_gena(self) -> GenaClient:
+        if self._gena is None:
+            self._gena = GenaClient(self.amp, port=self.renderer_port)
+        if not self._gena.is_subscribed("AVTransport"):
+            self._gena.subscribe("AVTransport")
+        return self._gena
+
+    def on_transport(self, callback) -> None:
+        """Abonne un callback aux events du transport push : callback(state, changed).
+
+        state   = TransportState courant ('PLAYING', 'STOPPED', …) ou None
+        changed = le delta du NOTIFY, ex {'TransportState': {'val': 'STOPPED'}}
+
+        Le callback tourne dans le thread du serveur GENA : ne pas y bloquer.
+        Rappel = remplace le callback précédent (un seul abonné AVTransport).
+        """
+        gena = self._ensure_gena()
+
+        def forward(_service: str, changed: dict) -> None:
+            state = (gena.var("AVTransport", "TransportState") or {}).get("val")
+            callback(state, changed)
+
+        gena.subscribe("AVTransport", forward)
+
+    def transport_state(self) -> str | None:
+        """État du transport vu par GENA (None si pas (encore) notifié — ne
+        coûte aucune requête ; pour l'état renderer direct : state())."""
+        if self._gena is None:
+            return None
+        return (self._gena.var("AVTransport", "TransportState") or {}).get("val")
+
+    def wait_stopped(self, timeout: float | None = None, arm_timeout: float = 10.0) -> bool:
+        """Bloque jusqu'à la fin de la piste poussée (event GENA, zéro polling).
+
+        Deux phases, pour éviter la course « vieux STOPPED de la piste d'avant » :
+        1. «armement» : attend que le transport entre en lecture (PLAYING/
+           TRANSITIONING/PAUSED_PLAYBACK), au plus arm_timeout secondes ;
+        2. attend STOPPED/NO_MEDIA_PRESENT, au plus timeout secondes.
+
+        Renvoie True si la fin a été observée, False si timeout expiré.
+        push_file(play=False) ne jouant jamais : phase 1 épuise arm_timeout
+        puis renvoie True (état déjà STOPPED) — utiliser play=True en pratique.
+        """
+        gena = self._ensure_gena()
+        playing = lambda st: (st.get("TransportState") or {}).get("val") in self._PLAYING
+        ended = lambda st: (st.get("TransportState") or {}).get("val") in self._ENDED
+        gena.wait_for("AVTransport", playing, timeout=arm_timeout)
+        return gena.wait_for("AVTransport", ended, timeout=timeout)
 
     # --- push
     def push_file(self, path: str, title: str = "", artist: str = "", album: str = "",

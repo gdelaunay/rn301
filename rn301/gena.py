@@ -306,6 +306,11 @@ class GenaClient:
 
     # ---------------------------------------------------------------- état / attente
 
+    def is_subscribed(self, service: str) -> bool:
+        """True si un abonnement actif existe sur ce service."""
+        with self._lock:
+            return service in self._subs and self._subs[service].sid is not None
+
     def state(self, service: str) -> dict[str, dict[str, str]]:
         """État ACCUMULÉ du service : copie de {variable: {attributs}}.
 
