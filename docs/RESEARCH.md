@@ -86,6 +86,27 @@ Pas d'entrée IR (REMOTE IN) au dos non plus — juste le capteur IR en façade.
 - `tools/scan_remote.py` : scanne les 256 codes en observant power/volume/input/mute via YNC.
   Les effets non observables (Balance, Speaker A/B, menus) demandent une vérif visuelle/auditive.
 
+## Résultats de scan & recodage (session 2)
+
+### Scan complet device 7F01 (256 codes, delay 1.5s, retry GET)
+- Seuls effets observables : `0x3A` et `0x3F` → changement d'input
+- **`0x3F` = touche CYCLE des sources réseau** (SERVER→NET RADIO→AirPlay→Spotify→...),
+  PAS une touche directe AirPlay
+- Volume/Power/Mute : AUCUN effet → ces touches ne sont pas sur device 7F01,
+  OU l'effet n'est pas observable YNC (Speaker A/B, Balance, Menu : invisibles !)
+
+### Scan complet device 7A01 (256 codes) → zéro effet
+### Tests device 7A85 (complément NEC1 de 7A) avec codes service manual → zéro effet
+- Power OFF `7A-1E` → `7A851EE1` : pas d'effet
+- Vol+ `7A-1A` → `7A851AEA` : pas d'effet
+- Variantes d'ordre de bytes (857A…, E11E…, inversés) : rien
+- **L'injection Remote_Signal ne décode apparemment QUE le device 7F01**
+- Codes "service manual" de l'agent (device 7A, JP1-style) non confirmés tels quels
+
+### Fiabilité
+- L'injection marche toujours (re-validée avec 7F013FC0 en boucle)
+- Parfois un échec isolé (file d'attente IR?) → prévoir retry côté client
+
 ## Options pour balance / Speaker A-B
 1. **`Remote_Signal`** — ✅ piste validée, reste à trouver les codes des touches (scan des 256)
 2. **IR physique** — un ESP32 + LED IR pointé vers le capteur de façade, en rejouant les

@@ -62,8 +62,11 @@ def snapshot() -> dict:
     return state
 
 
+PREFIX = "7F01"  # overridable via --prefix (ex: 7A01 = section ampli)
+
+
 def code_for(xx: int) -> str:
-    return f"7F01{xx:02X}{(~xx & 0xFF):02X}"
+    return f"{PREFIX}{xx:02X}{(~xx & 0xFF):02X}"
 
 
 def inject(xx: int) -> str:
@@ -79,7 +82,12 @@ def main():
     ap.add_argument("--range", default="00-FF", help="plage hex, ex 00-3F ou 46")
     ap.add_argument("--interactive", action="store_true")
     ap.add_argument("--delay", type=float, default=1.0)
+    ap.add_argument("--prefix", default="7F01")
     args = ap.parse_args()
+    global PREFIX, RESULTS
+    PREFIX = args.prefix.upper()
+    RESULTS = f"amp/remote_scan_{PREFIX}.json"
+    print(f"Prefixe device: {PREFIX}")
 
     if "-" in args.range:
         lo, hi = args.range.split("-")
