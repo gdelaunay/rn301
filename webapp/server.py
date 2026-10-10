@@ -9,16 +9,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import traceback
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from rn301 import RN301, YNCError
+from rn301.push import PushServer, PushError
 
-amp: RN301  # initialisé dans main()
+amp: RN301      # initialisé dans main()
+push: PushServer | None = None
+music_dir: str = "music"
 
-INDEX_HTML = """<!DOCTYPE html>
+INDEX_HTML = r"""<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
@@ -130,6 +135,26 @@ details summary{cursor:pointer;color:var(--dim);font-size:.85rem}
 </div>
 
 <div class="card">
+  <div class="lbl">📲 Push audio (DLNA direct) <span class="badge" id="pushstate"></span></div>
+  <div class="row">
+    <input type="file" id="pushfile" accept="audio/*" style="flex:1;color:var(--dim);font-size:.85rem">
+    <button onclick="pushFile()">Pousser 🔊</button>
+  </div>
+  <div class="gap"></div>
+  <div class="row">
+    <input type="url" id="pushurl" placeholder="http://… (webradio MP3, NAS…)" style="flex:1;background:#0d1117;color:var(--txt);border:1px solid #35445a;border-radius:6px;padding:8px;font-size:.85rem">
+    <button onclick="api('push',{url:document.getElementById('pushurl').value})">Go</button>
+  </div>
+  <div class="gap"></div>
+  <div class="row">
+    <button onclick="api('pushctl',{action:'Play'})">▶</button>
+    <button onclick="api('pushctl',{action:'Pause'})">⏸</button>
+    <button onclick="api('pushctl',{action:'Stop'})">⏹</button>
+    <span class="badge" id="pushmeta"></span>
+  </div>
+</div>
+
+<div class="card">
   <details>
     <summary>⚙️ Système</summary>
     <div class="gap"></div>
@@ -168,6 +193,20 @@ function vol(d){const v=Math.max(0,Math.min(80,(state.volume||0)+d));api('volume
 function togglePlay(){return playing?'Pause':'Play';}
 function shuffleNext(){shuffle=!shuffle;return shuffle?'On':'Off';}
 function repeatNext(){repeat=repeat==='Off'?'All':repeat==='All'?'One':'Off';return repeat;}
+
+async function pushFile(){
+  const inp=document.getElementById('pushfile');
+  const f=inp.files&&inp.files[0];
+  if(!f){toast('choisis un fichier audio');return;}
+  toast('upload…');
+  try{
+    const r=await fetch('/api/upload?name='+encodeURIComponent(f.name),{method:'POST',body:f});
+    const j=await r.json();
+    if(!r.ok||j.error)throw new Error(j.error||r.status);
+    await api('push',{file:j.path,title:f.name.replace(/\.[^.]+$/,'')});
+    inp.value='';
+  }catch(e){toast('⚠ '+e.message);}
+}
 
 async function refresh(){
   try{
@@ -246,6 +285,11 @@ function render(s){
     });
   } else lc.style.display='none';
 
+  // push
+  const ps=s.push_state||{};
+  document.getElementById('pushstate').textContent=ps.state||'—';
+  document.getElementById('pushmeta').textContent=ps.uri?decodeURIComponent(ps.uri.split('/').pop()||''):'';
+
   // système
   document.getElementById('btnNetStdby').classList.toggle('on',s.net_standby==='On');
   if(s.net_name)document.getElementById('netname').textContent=s.net_name;
@@ -323,6 +367,12 @@ class Handler(BaseHTTPRequestHandler):
                 out[key] = fn()
             except YNCError:
                 out[key] = None
+        # état du renderer DLNA (push)
+        if push is not None:
+            try:
+                out["push_state"] = push.state()
+            except PushError:
+                out["push_state"] = None
         return out
 
     # ---------------------------------------------------------------- routes
@@ -364,11 +414,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == "/api/upload":
+            self.handle_upload()
+            return
         body = self._body()
         try:
             result = self.dispatch(path, body)
         except YNCError as e:
             self._json({"error": f"ampli: {e}"}, 502)
+            return
+        except PushError as e:
+            self._json({"error": f"push: {e}"}, 502)
             return
         except (ValueError, KeyError, TypeError) as e:
             self._json({"error": f"paramètre invalide: {e}"}, 400)
@@ -381,6 +437,27 @@ class Handler(BaseHTTPRequestHandler):
             self._json(result)
         else:
             self._json({"ok": True, "state": self.full_state()})
+
+    def handle_upload(self):
+        """Reçoit un fichier audio brut (body binaire) dans music_dir/ pour push."""
+        qs = parse_qs(urlparse(self.path).query)
+        name = (qs.get("name") or ["upload.bin"])[0]
+        name = re.sub(r"[^\w.\- ]", "_", os.path.basename(name))[:120] or "upload.bin"
+        os.makedirs(music_dir, exist_ok=True)
+        dest = os.path.join(music_dir, name)
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0:
+            self._json({"error": "corps vide"}, 400)
+            return
+        with open(dest, "wb") as f:
+            remaining = n
+            while remaining > 0:
+                chunk = self.rfile.read(min(1 << 16, remaining))
+                if not chunk:
+                    break
+                f.write(chunk)
+                remaining -= len(chunk)
+        self._json({"ok": True, "path": os.path.abspath(dest), "name": name})
 
     def dispatch(self, path: str, body: dict):
         """Une route = une commande documentée. Retourne dict brut ou None (+state)."""
@@ -464,6 +541,33 @@ class Handler(BaseHTTPRequestHandler):
                     amp.remote_signal(body["code"])
                 else:
                     amp.remote_key(body["key"])
+            # --- push DLNA direct (MediaRenderer :8080)
+            case "/api/push":
+                if push is None:
+                    return {"error": "push désactivé (--no-push)"}
+                kw = {k: body[k] for k in ("title", "artist", "album") if body.get(k)}
+                if body.get("file"):
+                    r = push.push_file(body["file"], **kw)
+                elif body.get("url"):
+                    r = push.push_url(body["url"], mime=body.get("mime", "audio/mpeg"), **kw)
+                else:
+                    raise ValueError("file ou url requis")
+                return {"ok": True, "push": r, "state": self.full_state()}
+            case "/api/pushctl":
+                if push is None:
+                    return {"error": "push désactivé (--no-push)"}
+                action = body.get("action", "Play")
+                if action == "Play":
+                    push.play()
+                elif action == "Pause":
+                    push.pause()
+                elif action == "Stop":
+                    push.stop()
+                elif action == "Seek":
+                    push.seek(body.get("target", "0:00:00"))
+                else:
+                    raise ValueError(f"action inconnue: {action}")
+                return {"ok": True, "push": push.state(), "state": self.full_state()}
             # --- passe-plat YNC brut (pour explorer)
             case "/api/raw":
                 root = amp._request(body.get("cmd", "GET").upper(), body["xml"])
@@ -479,10 +583,18 @@ def main():
     p.add_argument("--amp", default="192.168.1.91", help="IP de l'ampli")
     p.add_argument("--port", type=int, default=8080)
     p.add_argument("--host", default="0.0.0.0")
+    p.add_argument("--push-port", type=int, default=9000, help="port HTTP servant les fichiers poussés")
+    p.add_argument("--music", default="music", help="dossier des uploads")
+    p.add_argument("--no-push", action="store_true", help="désactive le push DLNA")
     args = p.parse_args()
 
-    global amp
+    global amp, push, music_dir
     amp = RN301(args.amp)
+    music_dir = args.music
+    if not args.no_push:
+        push = PushServer(args.amp, serve_port=args.push_port)
+        push.start()
+        print(f"push DLNA: fichiers servis sur :{args.push_port} (uploads -> {music_dir}/)")
 
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"R-N301 web: http://localhost:{args.port}  (ampli: {args.amp})")

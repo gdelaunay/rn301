@@ -7,14 +7,17 @@ sans app officielle : protocole **YNC** (Yamaha Network Control) reverse-enginee
 **100 % Python stdlib** — aucune dépendance.
 
 ```
-┌──────────────┐   HTTP/XML (YNC)   ┌──────────────┐   DLNA   ┌────────┐
-│  Navigateur  │ ─────────────────► │  webapp/     │ ───────► │  NAS   │
-│  (page ctrl) │                    │  serveur.py  │          └────────┘
-└──────────────┘                    └──────┬───────┘
-                                           │
-                                    ┌──────▼───────┐
-                                    │ Yamaha R-N301│  192.168.1.91
-                                    └──────────────┘
+┌────────────────┐                                        ┌─────────────────────┐
+│   Navigateur   │                                        │  Serveur DLNA/UPnP  │
+│  (page ctrl)   │                                        │  (NAS, MiniDLNA…)   │
+└───────┬────────┘                                        └──────────▲──────────┘
+        │  HTTP                                                     ┆ optionnel
+        │  page + API JSON                                          ┆ (stream audio)
+        │                                                           ┆
+┌───────▼────────┐  import   ┌────────────────┐  HTTP/XML  ┌────────┴─────────┐
+│    webapp/     │──────────►│     rn301/     │──────────►│   Yamaha R-N301   │
+│   server.py    │           │   (librairie)  │   (YNC)    │   192.168.1.91    │
+└────────────────┘           └────────────────┘            └───────────────────┘
 ```
 
 ## 🚀 Démarrage rapide
@@ -93,7 +96,8 @@ Refresh auto toutes les 4 s.
 **Contrôles de la page** : power, volume (slider 0–80 + −/+), mute, 11 sources,
 lecteur "now playing" (pochette, play/pause/skip, shuffle/repeat), tuner
 (bande, fréquence, pas-à-pas, presets 1–8), **navigateur DLNA/Net Radio
-cliquable** (le menu de l'ampli affiché dans le navigateur !), Network Standby,
+cliquable** (le menu de l'ampli affiché dans le navigateur !), **push audio
+DLNA** (upload d'un fichier ou URL → joué sur l'ampli), Network Standby,
 touches IR.
 
 **API** (`POST` JSON, renvoie `{ok, state}` complet) :
@@ -118,6 +122,32 @@ touches IR.
 | `/api/remote` | `{key:"shuffle"}` ou `{code:"7F01..."}` | IR virtuel |
 | `/api/raw` | `{cmd:"GET", xml:"<...>GetParam</...>"}` | YNC brut (exploration) |
 | `/art?url=` (GET) | — | proxy pochettes d'album |
+| `/api/upload?name=` (POST) | body binaire brut | upload audio depuis le navigateur → `music/` |
+| `/api/push` | `{file\|url, title?, artist?, album?}` | **push DLNA** : pousse l'audio au renderer et joue |
+| `/api/pushctl` | `{action:"Play\|Pause\|Stop"}` | transport du renderer |
+
+## 📲 Push DLNA — envoyer n'importe quel audio à l'ampli
+
+Le R-N301 expose aussi un **MediaRenderer UPnP** sur `:8080`
+(`/MediaRenderer/desc.xml`, services AVTransport/RenderingControl/
+ConnectionManager). Comme l'app officielle avec la musique du téléphone
+(module `localfilecontroller`), on peut lui pousser directement une URL :
+le projet sert le fichier en HTTP (`FileServer`, Range/206) puis envoie
+`SetAVTransportURI`+`Play` en SOAP. **Validé en live : WAV, MP3, FLAC** ✅
+(pause/reprise OK ; seek refusé par le firmware).
+
+```python
+from rn301 import PushServer
+push = PushServer("192.168.1.91")
+push.push_file("morceau.flac", title="Mon morceau", artist="Moi")
+push.pause(); push.play(); print(push.state()); push.stop()
+push.push_url("http://nas/radio.mp3")          # webradio/NAS direct
+```
+
+Dans la webapp : carte **"📲 Push audio"** (upload d'un fichier depuis le
+navigateur — y compris depuis un téléphone — ou URL directe, boutons
+transport). Options : `--push-port` (9000), `--music` (dossier d'upload),
+`--no-push`. Détails et coulisses du reverse : **`docs/DLNA_PUSH.md`**.
 
 ## 🔬 Le reverse engineering (docs/)
 
@@ -142,6 +172,9 @@ dur par modèle. Méthode employée :
   retry rapprochés contre-productifs → délai 5 s
 - Tuner : chemin `Tuning/Freq/{FM,AM}`, pas d'auto-search YNC, presets sans `<Val>`
 - Réseau sous `System/Misc/Network/` (pas `System/Config/`)
+- **MediaRenderer UPnP sur `:8080`** (`/MediaRenderer/desc.xml`) : push audio
+  direct via `SetAVTransportURI` — WAV/MP3/FLAC validés en live, seek refusé,
+  `SetNextAVTransportURI` accepté mais sans effet (stub) → `docs/DLNA_PUSH.md`
 - ❌ Non supportés en YNC : Sleep, Gapless, Device_Name, FM_Mode, Jump_Line,
   Track_Number, Balance, Tone, Speaker A/B → façade ou télécommande IR physique uniquement
 
@@ -162,11 +195,12 @@ Speaker A/B, Balance...) via récepteur IR — si leur device ≠ 7F01, il faudr
 ## 📁 Arborescence
 
 ```
-├── rn301/               # ⭐ la librairie (rn301.py = client YNC complet)
+├── rn301/               # ⭐ la librairie (rn301.py = client YNC, push.py = push DLNA)
 ├── webapp/              # ⭐ serveur web + page de contrôle + API JSON
 ├── docs/
 │   ├── YNC_COMMANDS.md  # référence des commandes validées en live
 │   ├── RESEARCH.md      # journal de reverse engineering
+│   ├── DLNA_PUSH.md     # push audio direct (MediaRenderer :8080, validé live)
 │   └── ops_brut.txt     # table des ~90 ops YNC extraites de l'APK
 ├── tools/               # scripts d'analyse (androguard, sondage, scan IR)
 └── amp/                 # réponses live archivées (probe_gets.json, scans IR)
