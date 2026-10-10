@@ -200,10 +200,15 @@ navigateur — y compris depuis un téléphone — ou URL directe, boutons
 transport). Options : `--push-port` (9000), `--music` (dossier d'upload),
 `--no-push`. Détails et coulisses du reverse : **`docs/DLNA_PUSH.md`**.
 
-Le renderer honore aussi l'**eventing GENA** (`SUBSCRIBE /AVTransport/evt` →
-`SID` + `NOTIFY` sur chaque changement de `TransportState`), validé en live par
-`tools/probe_gena.py` mais **pas encore exploité** par la lib ni la webapp (qui
-pollent). C'est la voie pour attendre une fin de piste sans interroger l'ampli.
+Le renderer honore aussi l'**eventing GENA** (`SUBSCRIBE …/evt` → `SID` +
+`NOTIFY` à chaque changement), validé et **mesuré en live** par
+`tools/probe_gena.py` et `tools/probe_gena_raw.py` — mais **pas encore
+exploité** par la lib ni la webapp (qui pollent). Périmètre réel mesuré :
+GENA notifie le **volume/mute** (y compris depuis le bouton de façade et la
+télécommande, ~30 ms plus vite que le polling) et le **transport du push DLNA**,
+mais **jamais** `Power`, `Input_Sel`, ni la lecture réseau. Il complète donc le
+polling YNC sans le remplacer. Au passage : l'échelle de volume UPnP est
+**identique** au YNC (80 = 80 au plafond, le `0..100` du SCPD est déclaratif).
 Le contrat complet du service est archivé dans `amp/upnp_avtransport.xml`
 (15 actions, dont `Seek`/`Next`/`Previous` non exploitées, et
 `NumberOfTracks 0..1` → pas de playlist côté ampli).
@@ -231,7 +236,9 @@ découverte complet sans IP fixe : SSDP → `:8080/MediaRenderer/desc.xml` →
 
 - Tag source réseau = **`NET_RADIO`** (pas `Net_Radio` comme ailleurs dans la doc communautaire)
 - `Input_Sel` exige **`TUNER` en majuscules** (`Tuner` → RC=3)
-- **Volume : échelle 0..100**, mais plafonnée à **80** par le réglage
+- **Volume : échelle effective 0..80** sur les **deux** canaux (YNC et UPnP),
+  mesurée en live au plafond — le `allowedValueRange 0..100` du SCPD UPnP est
+  purement **déclaratif** et n'est pas appliqué. Le plafond 80 vient du réglage
   « Max Volume » de l'ampli (modifiable sur la façade) → `VOL_MAX` est une
   constante dépendante de la configuration, pas du protocole. Un `PUT` de 100
   est clampé à 80 par le firmware. Volume relatif `Up x.x dB` refusé →
@@ -281,7 +288,7 @@ télécommande physique RAX31 émet bien sur 7F.01.
 │   ├── DLNA_PUSH.md     # push audio direct (MediaRenderer :8080, validé live)
 │   └── ops_brut.txt     # table des ~90 ops YNC extraites de l'APK
 ├── tools/               # scripts d'analyse (androguard, sondage, scan IR,
-│                        #   sonde UPnP read-only : probe_gena.py)
+│                        #   sondes UPnP read-only : probe_gena*.py)
 └── amp/                 # réponses live archivées (probe_gets.json, scans IR,
                          #   upnp_desc.xml, upnp_rendering.xml, upnp_avtransport.xml)
 ```

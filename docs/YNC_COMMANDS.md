@@ -23,14 +23,16 @@ Enveloppe : `<YAMAHA_AV cmd="GET|PUT">…</YAMAHA_AV>` — lecture de valeur : t
    `desc.xml` **UPnP** du renderer `:8080` existe (`amp/upnp_desc.xml`) et son
    bloc vendor `<yamaha:X_device>` donne `X_URLBase` + `X_controlURL
    /YamahaRemoteControl/ctrl` → découverte SSDP possible sans IP fixe.
-7. **Volume : échelle matérielle 0..100**, plafonnée à **80** par le réglage
-   « Max Volume » de l'ampli (modifiable en façade) — un `PUT` de 100 est
-   clampé à 80 par le firmware. `VOL_MAX` est donc dépendant de la
+7. **Volume : échelle effective 0..80** (mesurée en live au plafond, identique
+   sur les deux canaux YNC et UPnP), le plafond venant du réglage « Max Volume »
+   de l'ampli (modifiable en façade) — un `PUT` de 100 est clampé à 80 par le
+   firmware. Le `allowedValueRange 0..100` du SCPD RenderingControl est
+   **déclaratif et non appliqué**. `VOL_MAX` est donc dépendant de la
    configuration, pas du protocole. Volume relatif
    `Up/Down N.0 dB` **refusé** (RC=3) → lire + calculer + écrire en absolu.
-   Le SCPD RenderingControl (`amp/upnp_rendering.xml`) déclare `Volume` en
-   `ui2` 0..100 avec `SetVolume`/`GetVolume`/`SetMute` → second canal de
-   contrôle, indépendant du YNC.
+   Le SCPD RenderingControl (`amp/upnp_rendering.xml`) expose aussi
+   `SetVolume`/`GetVolume`/`SetMute` → second canal de contrôle,
+   **mêmes valeurs** que le YNC (80 = 80 au max).
 8. **Non supportés en YNC** (HTTP 400, validé en live) : `System/Config/Sleep`,
    `Gapless_Playback`, `Device_Name`, `Tuner FM_Mode`, `Search_Mode` (auto-search),
    tuning `Up/Down` (fréquences absolues uniquement), preset avec wrapper `<Val>`
@@ -45,7 +47,7 @@ Enveloppe : `<YAMAHA_AV cmd="GET|PUT">…</YAMAHA_AV>` — lecture de valeur : t
 |---|---|---|
 | Tout l'état zone | `<Main_Zone><Basic_Status>GetParam</Basic_Status></Main_Zone>` | power+volume+mute+input+icône |
 | Power zone | `<Main_Zone><Power_Control><Power>GetParam</Power>…` | On / Standby |
-| Volume | `<Main_Zone><Volume><Lvl>GetParam</Lvl></Volume>…` | Val 0..100? (51 observé, max à déterminer) |
+| Volume | `<Main_Zone><Volume><Lvl>GetParam</Lvl></Volume>…` | Val **0..80** (plafond = réglage « Max Volume », 80 sur cet appareil ; 0 atteint en live) |
 | Mute | `<Main_Zone><Volume><Mute>GetParam</Mute>…` | On/Off/Attenuation? |
 | Input courant | `<Main_Zone><Input><Input_Sel>GetParam</Input_Sel>…` | |
 | Liste inputs | `<Main_Zone><Input><Input_Sel_Item>GetParam</Input_Sel_Item>…` | 11 entrées + icônes |
@@ -64,7 +66,7 @@ Play_Info répond même quand la source est inactive (`Feature_Availability: Not
 | Fonction | Requête (dans `<YAMAHA_AV cmd="PUT">`) | Valeurs |
 |---|---|---|
 | Power zone | `<Main_Zone><Power_Control><Power>On</Power>…` | On / Standby |
-| Volume absolu | `<Main_Zone><Volume><Lvl><Val>54</Val><Exp>0</Exp><Unit></Unit></Lvl>…` | échelle 0..100, plafonnée à 80 par le réglage « Max Volume » de l'ampli |
+| Volume absolu | `<Main_Zone><Volume><Lvl><Val>54</Val><Exp>0</Exp><Unit></Unit></Lvl>…` | Val 0..80 (plafond réglable en façade ; échelle identique au canal UPnP) |
 | Mute | `<Main_Zone><Volume><Mute>On</Mute>…` | On / Off |
 | Input | `<Main_Zone><Input><Input_Sel>SERVER</Input_Sel>…` | voir liste des 11 inputs |
 | Playback | `<{SRC}><Play_Control><Playback>Play</Playback>…` | Play/Stop/Pause/Skip Fwd/Skip Rev — SRC ∈ NET_RADIO, SERVER, Spotify, AirPlay |

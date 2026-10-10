@@ -131,6 +131,91 @@ n'utilisent GENA aujourd'hui (la webapp poll toujours toutes les 4 s). C'est la
 prochaine étape logique : attendre la fin d'une piste ou d'une annonce TTS sur
 un event `STOPPED` au lieu de poller `transport_info()`.
 
+### Couplage YNC ↔ UPnP : ce qui est notifié, ce qui ne l'est pas
+
+**Mesuré en live le 2025-10-10** (`tools/probe_gena_raw.py`, fenêtre de 420 s,
+manipulations au bouton physique de façade + télécommande, polling YNC de
+`Basic_Status` toutes les 0,5 s en parallèle pour corréler les deux piles).
+
+27 NOTIFY `RenderingControl` reçus, dont 26 provoqués par la manipulation :
+
+```
+t=  0.09s SEQ=0    Mute=0, Volume=50, PresetNameList=…   ← état complet (initial)
+t= 37.71s SEQ=1    Volume=52        ┐
+t= 79.46s SEQ=17   Volume=80        │  bouton physique / télécommande
+t= 82.58s SEQ=18   Volume=0         │
+t= 96.45s SEQ=21   Mute=1           │
+t= 99.81s SEQ=22   Mute=0           ┘
+t=160.14s SEQ=26   Volume=31
+```
+
+Latence : l'event `Volume=80` arrive à **79,46 s**, le polling YNC ne voit `80`
+qu'à **79,49 s** → GENA est ~30 ms **plus rapide** que la sonde. C'est ce qui
+explique la réactivité de l'app officielle sur le volume.
+
+#### ✅ Ce que GENA notifie
+
+| Changement | Service | Observé |
+|---|---|---|
+| Volume (bouton façade, télécommande) | `RenderingControl` | ✅ `Volume[Master]` |
+| Mute on/off | `RenderingControl` | ✅ `Mute[Master]=1` puis `=0` |
+| Transport du **push DLNA** | `AVTransport` | ✅ `TransportState` (voir §GENA) |
+
+#### ❌ Ce que GENA ne voit **jamais**
+
+| Manipulation effectuée | Events reçus |
+|---|---|
+| `Input_Sel` LINE1 → COAXIAL → LINE1 (t=47,9 s) | **0** |
+| `Input_Sel` LINE1 → LINE2 → LINE1 (t=104,5 s) | **0** |
+| `Input_Sel` LINE1 → SERVER (t=133,9 s) | **0** |
+| **`Power` On → Standby → On** (t=110,5 s) | **0** |
+| Lecture réseau SERVER + Play/Pause | **0** sur AVTransport |
+
+Sur 420 s, `AVTransport` n'a émis **qu'un seul** NOTIFY : l'event initial. Le
+renderer ne reflète que le push DLNA, jamais la lecture réseau pilotée en YNC —
+ce qui confirme par la mesure la séparation déjà documentée au §3 (« le push ne
+change pas l'entrée YNC »). Symétriquement, un `Play`/`Pause` envoyé à
+l'AVTransport pendant une écoute `SERVER` n'a **aucun effet** : il faut passer
+par le YNC (`Play_Control/Playback`).
+
+**Conclusion d'architecture : GENA ne remplace pas le polling YNC, il le
+complète.** Volume/mute en push instantané, tout le reste (power, source,
+play_info, navigation des listes, tuner) reste à poller.
+
+#### ⭐ Échelle de volume : UPnP == YNC (question tranchée)
+
+Volume poussé **au maximum** pendant la mesure :
+
+| canal | valeur au plafond |
+|---|---|
+| GENA `Volume[Master]` | **80** |
+| YNC `Basic_Status/Val` | **80** |
+| SCPD `allowedValueRange` | 0..100 *(déclaratif, non appliqué)* |
+
+Les deux échelles sont **identiques** : aucun mapping à écrire. Le `0..100` du
+SCPD est une déclaration générique ; le plafond réel (80 ici) vient du réglage
+« Max Volume » de l'ampli, modifiable en façade. Conséquence : `VOL_MAX` ne
+doit pas être codé en dur — si l'utilisateur monte ce réglage à 100, une lib
+bridée à 80 serait fautive.
+
+#### ⚠️ Trois pièges d'implémentation
+
+1. **`LastChange` est incrémental.** Seul `SEQ=0` contient l'état complet
+   (`PresetNameList` + `Mute` + `Volume`) ; les events suivants ne portent
+   **que la variable modifiée** (`SEQ=1..20` → uniquement `Volume`). Il faut
+   donc maintenir un état local et appliquer des deltas, pas écraser l'objet.
+2. **Les events sont modérés (coalescés).** UPnP autorise l'appareil à regrouper
+   les notifications : en tournant vite le bouton, le polling YNC a vu
+   `52→55→49→45…` tandis que GENA envoyait `52→53→45→41…` — 26 events pour
+   davantage de pas réels, avec des valeurs intermédiaires différentes. GENA
+   donne la **valeur finale fiable**, pas un historique exhaustif. Parfait pour
+   un slider d'UI, insuffisant pour tracer chaque pas.
+3. **Attributs dans l'ordre inverse.** Le XML est
+   `<Volume channel="Master" val="50"/>` : `channel` **avant** `val`. Un parseur
+   qui attend `val=` immédiatement après le nom de balise ne voit rien (bug
+   rencontré pendant la mesure : les events semblaient vides alors qu'ils ne
+   l'étaient pas).
+
 ### `TransportStatus = ERROR_OCCURRED` au repos — explication
 
 Observé ampli « au repos » : `GetTransportInfo` → `CurrentTransportState =
@@ -299,6 +384,10 @@ Points d'attention (vus en live) :
   (`GetDeviceCapabilities`, `GetCurrentTransportActions`, `GetTransportInfo`,
   `GetMediaInfo`, `GetPositionInfo`, `GetTransportSettings`) et test
   SUBSCRIBE/NOTIFY/UNSUBSCRIBE. Ne modifie aucun état de l'ampli.
+- **`tools/probe_gena_raw.py`** — sonde de **couplage** : body brut horodaté de
+  chaque NOTIFY `RenderingControl` + `AVTransport`, avec polling YNC de
+  `Basic_Status` en parallèle. Sert à mesurer ce que GENA voit / ne voit pas
+  quand on manipule l'ampli physiquement (voir §Couplage YNC ↔ UPnP).
 
 ### Tests live réalisés
 
@@ -316,6 +405,9 @@ Points d'attention (vus en live) :
 | `GetCurrentTransportActions` | ✅ `Play,Next,Previous` |
 | `GetTransportSettings` | ✅ `PlayMode=NORMAL` (seule valeur autorisée) |
 | **GENA `SUBSCRIBE /AVTransport/evt`** | ✅ **200 + SID, TIMEOUT 300 honoré, 1 NOTIFY initial (SEQ 0), UNSUBSCRIBE 200** |
+| GENA `RenderingControl/evt` + volume physique | ✅ 26 NOTIFY `Volume[Master]`/`Mute[Master]`, ~30 ms plus rapide que le polling YNC |
+| GENA + changement d'`Input_Sel` / `Power` / lecture SERVER | ❌ **aucun event** — les deux piles sont étanches hors volume |
+| Échelle de volume UPnP vs YNC, au plafond | ✅ **identiques** (80 = 80) ; le `0..100` du SCPD est déclaratif |
 | `GetMediaInfo` après arrêt du serveur de fichiers | URI conservée, `TransportStatus=ERROR_OCCURRED` (voir §explication) |
 
 ### TODO / reste à tester
@@ -332,9 +424,13 @@ Points d'attention (vus en live) :
 - **Retester `Seek REL_TIME` avec `DLNA.ORG_OP=01`** : le SCPD déclare
   `REL_TIME` supporté, le refus observé vient peut-être du drapeau OP et non de
   l'action (mais OP=01 provoquait `ERROR_OCCURRED` à la reprise → trade-off)
-- Volume UPnP via `RenderingControl` (double pilotage YNC/UPnP) — à noter, le SCPD
-  RenderingControl déclare `Volume` en `ui2` **0..100**, alors que le YNC est
-  plafonné à 80 par le réglage « Max Volume » de l'ampli
+- ~~Volume UPnP via `RenderingControl` (double pilotage YNC/UPnP)~~ → **mesuré** :
+  échelle **identique** au YNC (80 = 80 au plafond, 0..100 du SCPD déclaratif),
+  et GENA notifie les changements faits à la télécommande/au bouton physique.
+  Reste à tester : un `SetVolume` **UPnP** est-il visible en YNC (et inversement),
+  et le canal UPnP fonctionne-t-il pendant un RC=3 YNC ?
+- Lire le réglage « Max Volume » de l'ampli au lieu de `VOL_MAX = 80` en dur
+  (chemin YNC à trouver, probablement sous `Main_Zone/Volume/` ou `System/Config/`)
 - `Next` / `Previous` : comportement réel sans `SetNextAVTransportURI` fonctionnel
 - Capture de `/ConnectionManager/desc.xml` et `/RenderingControl/evt` (mêmes
   questions GENA pour le volume)
