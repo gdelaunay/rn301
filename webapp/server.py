@@ -98,10 +98,10 @@ details summary{cursor:pointer;color:var(--dim);font-size:.85rem}
   </div>
   <div class="gap"></div>
   <div class="row">
-    <button onclick="api('playback',{action:'Skip Rev'})">⏮</button>
-    <button class="big" onclick="api('playback',{action:togglePlay()})" id="btnPlay">▶</button>
-    <button onclick="api('playback',{action:'Skip Fwd'})">⏭</button>
-    <button onclick="api('playback',{action:'Stop'})">⏹</button>
+    <button id="btnPrev" onclick="api('playback',{action:'Skip Rev'})">⏮</button>
+    <button class="big" onclick="playBtn()" id="btnPlay">▶</button>
+    <button id="btnNext" onclick="api('playback',{action:'Skip Fwd'})">⏭</button>
+    <button onclick="pushMode?api('pushctl',{action:'Stop'}):api('playback',{action:'Stop'})">⏹</button>
     <div style="flex:1"></div>
     <button id="btnShuffle" onclick="api('playmode',{what:'shuffle',value:shuffleNext()})">🔀</button>
     <button id="btnRepeat" onclick="api('playmode',{what:'repeat',value:repeatNext()})">🔁</button>
@@ -134,8 +134,8 @@ details summary{cursor:pointer;color:var(--dim);font-size:.85rem}
   </div>
 </div>
 
-<div class="card">
-  <div class="lbl">📲 Push audio (DLNA direct) <span class="badge" id="pushstate"></span></div>
+<div class="card" id="pushcard" style="display:none">
+  <div class="lbl">📲 Mode Push — audio du navigateur <span class="badge" id="pushstate"></span></div>
   <div class="row">
     <input type="file" id="pushfile" accept="audio/*" style="flex:1;color:var(--dim);font-size:.85rem">
     <button onclick="pushFile()">Pousser 🔊</button>
@@ -146,12 +146,7 @@ details summary{cursor:pointer;color:var(--dim);font-size:.85rem}
     <button onclick="api('push',{url:document.getElementById('pushurl').value})">Go</button>
   </div>
   <div class="gap"></div>
-  <div class="row">
-    <button onclick="api('pushctl',{action:'Play'})">▶</button>
-    <button onclick="api('pushctl',{action:'Pause'})">⏸</button>
-    <button onclick="api('pushctl',{action:'Stop'})">⏹</button>
-    <span class="badge" id="pushmeta"></span>
-  </div>
+  <div class="lbl" style="margin:0">Transport (▶ ⏸ ⏹) dans la carte Lecture ci-dessus</div>
 </div>
 
 <div class="card">
@@ -177,7 +172,10 @@ details summary{cursor:pointer;color:var(--dim);font-size:.85rem}
 <div id="toast"></div>
 
 <script>
-let state={}, band='FM', shuffle=false, repeat='Off', playing=false;
+let state={}, band='FM', shuffle=false, repeat='Off', playing=false, pushMode=false;
+
+function enterPush(){pushMode=true;api('input',{val:'SERVER'});}
+function exitPush(v){pushMode=false;api('input',{val:v});}
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
 async function api(action,body,norefresh){
@@ -191,6 +189,7 @@ async function api(action,body,norefresh){
 }
 function vol(d){const v=Math.max(0,Math.min(80,(state.volume||0)+d));api('volume',{val:v});}
 function togglePlay(){return playing?'Pause':'Play';}
+function playBtn(){pushMode?api('pushctl',{action:playing?'Pause':'Play'}):api('playback',{action:togglePlay()});}
 function shuffleNext(){shuffle=!shuffle;return shuffle?'On':'Off';}
 function repeatNext(){repeat=repeat==='Off'?'All':repeat==='All'?'One':'Off';return repeat;}
 
@@ -203,7 +202,7 @@ async function pushFile(){
     const r=await fetch('/api/upload?name='+encodeURIComponent(f.name),{method:'POST',body:f});
     const j=await r.json();
     if(!r.ok||j.error)throw new Error(j.error||r.status);
-    await api('push',{file:j.path,title:f.name.replace(/\.[^.]+$/,'')});
+    await api('push',{file:j.path});   // titre/artiste/album lus depuis les tags
     inp.value='';
   }catch(e){toast('⚠ '+e.message);}
 }
@@ -224,15 +223,24 @@ function render(s){
   document.getElementById('vol').value=s.volume??0;
   document.getElementById('volval').textContent=on?(s.volume??'--'):'--';
 
-  // sources
+  // sources (+ pseudo-source PUSH en dernier, comme le mode "Device" de l'app)
+  const ps=s.push_state||{};
+  if(['PLAYING','TRANSITIONING','PAUSED_PLAYBACK'].includes(ps.state)) pushMode=true;
+  if(s.input!=='SERVER') pushMode=false;
   const sc=document.getElementById('sources');
   if(!sc.children.length && s.inputs){
     s.inputs.forEach(i=>{
       const b=document.createElement('button'); b.className='src'; b.textContent=i.value;
-      b.onclick=()=>api('input',{val:i.value}); sc.appendChild(b);
+      b.onclick=()=>{pushMode=false;api('input',{val:i.value});}; sc.appendChild(b);
     });
+    const bp=document.createElement('button'); bp.className='src'; bp.id='srcPush';
+    bp.textContent='📱 PUSH'; bp.style.borderColor='var(--acc)';
+    bp.onclick=()=>enterPush(); sc.appendChild(bp);
   }
-  [...sc.children].forEach(b=>b.classList.toggle('on',b.textContent===s.input));
+  [...sc.children].forEach(b=>{
+    if(b.id==='srcPush') b.classList.toggle('on',pushMode);
+    else b.classList.toggle('on',!pushMode&&b.textContent===s.input);
+  });
 
   // now playing (sources réseau)
   const inp=(s.input||'').toUpperCase();
@@ -241,7 +249,7 @@ function render(s){
   const nc=document.getElementById('nowcard');
   if(on&&net&&pi.available!=='Not Ready'){
     nc.style.display='';
-    playing=(pi.playback||'')==='Play';
+    playing=pushMode?['PLAYING','TRANSITIONING'].includes(ps.state):(pi.playback||'')==='Play';
     document.getElementById('btnPlay').textContent=playing?'⏸':'▶';
     const m=pi.meta||{};
     document.getElementById('npTitle').textContent=m.song||m.station||'—';
@@ -270,7 +278,7 @@ function render(s){
   // navigateur liste SERVER / NET RADIO
   const lc=document.getElementById('listcard');
   const li=s.list_info;
-  if(on&&li&&li.menu_status==='Ready'&&li.lines&&li.lines.length){
+  if(on&&!pushMode&&li&&li.menu_status==='Ready'&&li.lines&&li.lines.length){
     lc.style.display='';
     document.getElementById('menuname').textContent=li.menu_name||('layer '+li.menu_layer);
     const menu=document.getElementById('menu'); menu.innerHTML='';
@@ -285,10 +293,9 @@ function render(s){
     });
   } else lc.style.display='none';
 
-  // push
-  const ps=s.push_state||{};
+  // push (carte visible seulement en mode push)
+  document.getElementById('pushcard').style.display=(on&&pushMode)?'':'none';
   document.getElementById('pushstate').textContent=ps.state||'—';
-  document.getElementById('pushmeta').textContent=ps.uri?decodeURIComponent(ps.uri.split('/').pop()||''):'';
 
   // système
   document.getElementById('btnNetStdby').classList.toggle('on',s.net_standby==='On');
@@ -314,6 +321,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
@@ -371,6 +379,7 @@ class Handler(BaseHTTPRequestHandler):
         if push is not None:
             try:
                 out["push_state"] = push.state()
+                out["push_meta"] = push.last_meta
             except PushError:
                 out["push_state"] = None
         return out
@@ -393,6 +402,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(amp.system_config())
             except YNCError as e:
                 self._json({"error": str(e)}, 502)
+        elif path == "/pushart":
+            # pochette intégrée du fichier en cours de push
+            if push is not None and push.server.cover_data:
+                self._send(200, push.server.cover_data, push.server.cover_mime)
+            else:
+                self._json({"error": "pas de pochette"}, 404)
         elif path == "/art":
             # proxy pochette d'album (l'URL est relative à l'ampli)
             from urllib.parse import urlparse as _up, parse_qs as _pq
@@ -545,6 +560,16 @@ class Handler(BaseHTTPRequestHandler):
             case "/api/push":
                 if push is None:
                     return {"error": "push désactivé (--no-push)"}
+                # le renderer ne joue que sur l'entrée réseau SERVER :
+                # basculer dessus si besoin (sinon PLAYING mais muet !)
+                import time
+                try:
+                    cur = amp.get_input()
+                except YNCError:
+                    cur = None
+                if cur != "SERVER":
+                    amp.set_input("SERVER")
+                    time.sleep(4)   # RC=3 "occupé" après changement de source réseau
                 kw = {k: body[k] for k in ("title", "artist", "album") if body.get(k)}
                 if body.get("file"):
                     r = push.push_file(body["file"], **kw)

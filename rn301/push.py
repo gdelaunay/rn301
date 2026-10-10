@@ -80,6 +80,19 @@ class _FileHandler(BaseHTTPRequestHandler):
         pass
 
     def _serve(self, head_only: bool = False):
+        # /albumart/… → pochette intégrée extraite du fichier poussé
+        if self.path.startswith("/albumart"):
+            data = getattr(self.server, "cover_data", None)
+            if data is None:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", getattr(self.server, "cover_mime", "image/jpeg"))
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            if not head_only:
+                self.wfile.write(data)
+            return
         # chemin servi = /<n'importe quoi> → le fichier enregistré sur le serveur
         path: str = getattr(self.server, "push_file_path", None)  # type: ignore[attr-defined]
         if not path or not os.path.isfile(path):
@@ -143,6 +156,8 @@ class FileServer:
 
     def __init__(self, host: str = "0.0.0.0", port: int = 9000):
         self.host, self.port = host, port
+        self.cover_data: bytes | None = None
+        self.cover_mime: str = "image/jpeg"
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -164,6 +179,9 @@ class FileServer:
         assert self._httpd is not None, "serveur non démarré"
         self._httpd.push_file_path = os.path.abspath(path)  # type: ignore[attr-defined]
 
+    def set_cover(self, data: bytes | None, mime: str = "image/jpeg"):
+        self.cover_data, self.cover_mime = data, mime
+
     def local_ip(self, toward: str) -> str:
         """IP de la machine vue depuis l'ampli (évite 127.0.0.1 et le multi-homing)."""
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -172,6 +190,133 @@ class FileServer:
             return s.getsockname()[0]
         finally:
             s.close()
+
+
+# ---------------------------------------------------------------------------
+# pochette intégrée (ID3v2 APIC / FLAC PICTURE) — stdlib only
+# ---------------------------------------------------------------------------
+
+def _id3_frames(data: bytes, synchsafe: bool) -> dict:
+    """Parse les frames texte ID3v2 (TIT2/TPE1/TALB…)."""
+    out, i = {}, 0
+    while i + 10 <= len(data):
+        fid = data[i:i + 4]
+        if not fid[:1].isalpha():
+            break
+        b = data[i + 4:i + 8]
+        size = ((b[0] << 21) | (b[1] << 14) | (b[2] << 7) | b[3]) if synchsafe \
+            else int.from_bytes(b, "big")
+        if size <= 0:
+            break
+        if fid[:1] == b"T" and fid != b"TXXX":
+            fr = data[i + 10:i + 10 + size]
+            enc, txt = fr[0], fr[1:]
+            codec = {0: "latin1", 1: "utf-16", 2: "utf-16-be", 3: "utf-8"}.get(enc, "latin1")
+            try:
+                out[fid.decode()] = txt.decode(codec).rstrip("\x00").strip()
+            except (UnicodeDecodeError, LookupError):
+                pass
+        i += 10 + size
+    return out
+
+
+def extract_tags(path: str) -> dict:
+    """Lit title/artist/album des tags intégrés (ID3v2, FLAC/Vorbis, MP4 atom)."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(10)
+            if head[:3] == b"ID3" and head[3] >= 3:
+                tag_size = (head[6] << 21) | (head[7] << 14) | (head[8] << 7) | head[9]
+                fr = _id3_frames(f.read(tag_size), head[3] == 4)
+                return {"title": fr.get("TIT2", ""), "artist": fr.get("TPE1", ""),
+                        "album": fr.get("TALB", "")}
+            if head[:4] == b"fLaC":
+                f.seek(0)
+                while True:
+                    hdr = f.read(4)
+                    if len(hdr) < 4:
+                        break
+                    btype, blen = hdr[0] & 0x7F, int.from_bytes(hdr[1:4], "big")
+                    block = f.read(blen)
+                    if btype == 4:                               # VORBIS_COMMENT
+                        j = 4                                    # vendor string
+                        n = int.from_bytes(block[j:j + 4], "little"); j += 4 + n
+                        cnt = int.from_bytes(block[j:j + 4], "little"); j += 4
+                        out = {}
+                        for _ in range(cnt):
+                            n = int.from_bytes(block[j:j + 4], "little"); j += 4
+                            kv = block[j:j + n].decode("utf-8", "replace"); j += n
+                            if "=" in kv:
+                                k, v = kv.split("=", 1)
+                                out[k.upper()] = v
+                        return {"title": out.get("TITLE", ""), "artist": out.get("ARTIST", ""),
+                                "album": out.get("ALBUM", "")}
+                    if hdr[0] & 0x80 or blen == 0:
+                        break
+            if head[4:8] == b"ftyp":                             # MP4/M4A
+                f.seek(0)
+                data = f.read(1024 * 1024)                       # tags en début de fichier
+                ilst = data.find(b"\xa9nam")
+                out = {}
+                for atom, key in ((b"\xa9nam", "title"), (b"\xa9ART", "artist"), (b"\xa9alb", "album")):
+                    p = data.find(atom)
+                    if p > 0 and p + 16 < len(data):
+                        n = int.from_bytes(data[p + 12:p + 14], "big")
+                        out[key] = data[p + 16:p + 16 + n].decode("utf-8", "replace")
+                return out
+    except Exception:
+        pass
+    return {}
+
+
+def extract_cover(path: str) -> tuple[bytes, str] | None:
+    """Extrait la pochette intégrée d'un fichier audio → (octets, mime) ou None."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(10)
+            if head[:3] == b"ID3" and head[3] >= 3:
+                tag_size = (head[6] << 21) | (head[7] << 14) | (head[8] << 7) | head[9]
+                data = f.read(tag_size)
+                i = 0
+                while i + 10 <= len(data):
+                    fid = data[i:i + 4]
+                    if not fid[:1].isalpha():
+                        break                                    # padding
+                    b = data[i + 4:i + 8]
+                    fsize = ((b[0] << 21) | (b[1] << 14) | (b[2] << 7) | b[3]) if head[3] == 4 \
+                        else int.from_bytes(b, "big")
+                    if fsize <= 0:
+                        break
+                    if fid == b"APIC":
+                        fr = data[i + 10:i + 10 + fsize]
+                        mime_end = fr.index(b"\x00", 1)
+                        mime = fr[1:mime_end].decode("latin1") or "image/jpeg"
+                        if mime in ("image/", ""):
+                            mime = "image/png" if b"\x89PNG" in fr[:mime_end + 20] else "image/jpeg"
+                        desc_end = fr.index(b"\x00", mime_end + 2)
+                        return fr[desc_end + 1:], mime
+                    i += 10 + fsize
+            elif head[:4] == b"fLaC":
+                f.seek(0)
+                while True:
+                    hdr = f.read(4)
+                    if len(hdr) < 4:
+                        break
+                    btype, blen = hdr[0] & 0x7F, int.from_bytes(hdr[1:4], "big")
+                    block = f.read(blen)
+                    if btype == 6:                               # PICTURE
+                        j = 4                                    # picture type
+                        n = int.from_bytes(block[j:j + 4], "big"); j += 4
+                        mime = block[j:j + n].decode() or "image/jpeg"; j += n
+                        n = int.from_bytes(block[j:j + 4], "big"); j += 4 + n   # description
+                        j += 16                                  # w/h/depth/colors
+                        n = int.from_bytes(block[j:j + 4], "big"); j += 4
+                        return block[j:j + n], mime
+                    if hdr[0] & 0x80 or blen == 0:
+                        break
+    except Exception:
+        pass
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +443,7 @@ class PushServer:
         self.amp = amp
         self.server = FileServer(serve_host, serve_port)
         self.renderer = Renderer(amp, renderer_port)
+        self.last_meta: dict = {}
 
     # --- cycle de vie
     def start(self):
@@ -313,20 +459,32 @@ class PushServer:
             raise PushError(f"fichier introuvable: {path}")
         self.start()
         self.server.set_file(path)
+        cover = extract_cover(path)
+        self.server.set_cover(cover[0] if cover else None, cover[1] if cover else "image/jpeg")
         ip = self.server.local_ip(self.amp)
         uri = f"http://{ip}:{self.server.port}/audio/1/"
+        art_url = f"http://{ip}:{self.server.port}/albumart/1" if cover else ""
         mime = MIME_BY_EXT.get(os.path.splitext(path)[1].lower(), "audio/wav")
-        meta = didl_metadata(uri, mime, title=title or os.path.basename(path),
-                             artist=artist, album=album, size=os.path.getsize(path))
+        if not (title and artist and album):
+            tags = extract_tags(path)
+            title = title or tags.get("title", "")
+            artist = artist or tags.get("artist", "")
+            album = album or tags.get("album", "")
+        title = title or os.path.splitext(os.path.basename(path))[0]
+        meta = didl_metadata(uri, mime, title=title, artist=artist, album=album,
+                             art_url=art_url, size=os.path.getsize(path))
+        self.last_meta = {"title": title, "artist": artist, "album": album, "cover": bool(cover)}
         self.renderer.set_uri(uri, meta)
         if play:
             self.renderer.play()
-        return {"uri": uri, "file": path, "transport": self.renderer.transport_info()}
+        return {"uri": uri, "file": path, "cover": bool(cover),
+                "transport": self.renderer.transport_info()}
 
     def push_url(self, url: str, title: str = "", artist: str = "", album: str = "",
                  mime: str = "audio/mpeg", play: bool = True) -> dict:
-        meta = didl_metadata(url, mime, title=title or url.rsplit("/", 1)[-1],
-                             artist=artist, album=album)
+        title = title or url.rsplit("/", 1)[-1]
+        meta = didl_metadata(url, mime, title=title, artist=artist, album=album)
+        self.last_meta = {"title": title, "artist": artist, "album": album, "cover": False}
         self.renderer.set_uri(url, meta)
         if play:
             self.renderer.play()
