@@ -1,447 +1,353 @@
-# 🔊 DLNA Push — envoyer n'importe quel audio au R-N301
+# 🔊 DLNA Push — le MediaRenderer du R-N301
 
-> **✅ VALIDÉ EN LIVE** (2025-10-10) : WAV et MP3 poussés depuis le PC via
-> `rn301/push.py` → l'ampli fait bien `GET` sur notre serveur HTTP et joue.
-> Pause/reprise OK (rel_time conservé). **Seek refusé** par le renderer
-> ("Seek mode not supported"). Piège trouvé en live : déclarer
-> `DLNA.ORG_OP=01` (seekable) sur un WAV alors que le renderer ne sait pas le
-> gérer → `ERROR_OCCURRED` à la reprise après pause. L'app officielle déclare
-> `OP=00` pour wav/flac/mp3/wma et `OP=01` seulement pour mp4/3gpp —
-> `rn301/push.py` recopie ce mapping.
+> **Documentation de référence** — décrit le renderer UPnP de l'ampli, le
+> protocole de push et l'API de la lib. Tous les faits marqués ✅ ont été
+> validés en live sur firmware 1.13/0.05. Provenance et sessions de mesure :
+> [`RESEARCH.md`](RESEARCH.md).
 
-Découverte majeure : en plus du YNC (port 80), le R-N301 expose un
-**MediaRenderer UPnP/DLNA complet** — on peut lui *pousser* directement une URL
-audio, exactement comme le fait l'app officielle avec la musique du téléphone.
+En plus du YNC (port 80), le R-N301 expose un **MediaRenderer UPnP/DLNA
+complet** sur le port **8080** : on peut lui *pousser* directement une URL
+audio — exactement comme l'app officielle avec la musique du téléphone. C'est
+ce que fait `rn301/push.py` (`PushServer`), avec `rn301/gena.py` pour les
+événements et `rn301/discover.py` pour trouver l'ampli sans IP fixe.
 
-## 1. Le renderer UPnP de l'ampli (validé en live)
+```python
+from rn301 import discover_one, PushServer
 
-Contrairement au desc.xml YNC (`/YamahaRemoteControl/desc.xml` → 404), le
-renderer est bien présent, sur le **port 8080** :
+found = discover_one()                       # scan SSDP → IP, modèle, endpoints
+push = PushServer(found["host"])
+push.push_file("morceau.flac", title="Mon morceau")
+push.wait_stopped(timeout=600)               # bloque sur l'event GENA de fin
+push.close()
+```
+
+---
+
+## 1. Le renderer UPnP de l'ampli
 
 ```
-GET http://192.168.1.91:8080/MediaRenderer/desc.xml      → 200 OK
+GET http://<ip>:8080/MediaRenderer/desc.xml      → 200 OK
 ```
 
 ```
 friendlyName : YAMAHA R-N301
-deviceType   : urn:schemas-upnp-org:device:MediaRenderer:1  (DMR-1.50)
+deviceType   : urn:schemas-upnp-org:device:MediaRenderer:1  (DLNA DMR-1.50)
 UDN          : uuid:5f9ec1b3-ed59-1900-4530-00a0dec48d64
-SERVER       : KnOS/3.2 UPnP/1.0 DMP/3.5   (stack UPnP embarquée)
-services :              ctrl                    SCPD (contrat)         evt (GENA)
-  RenderingControl   /RenderingControl/ctrl   /RenderingControl/desc.xml   /RenderingControl/evt
-  ConnectionManager  /ConnectionManager/ctrl  /ConnectionManager/desc.xml  /ConnectionManager/evt
-  AVTransport        /AVTransport/ctrl        /AVTransport/desc.xml        /AVTransport/evt
+SERVER       : KnOS/3.2 UPnP/1.0 DMP/3.5        (stack UPnP embarquée)
 ```
 
-Le `<yamaha:X_device>` du desc.xml contient en plus `X_URLBase
-http://<ip>:80/` + `X_controlURL /YamahaRemoteControl/ctrl` : **l'endpoint YNC
-est référencé depuis l'UPnP**, ce qui permet une découverte SSDP complète sans
-IP fixe. Icônes officielles servies par l'ampli : `:8080/BCO_device_{sm,lrg}_icon.{jpg,png}`
-(48×48 et 120×120). `presentationURL http://<ip>/` = la page de configuration
-embarquée (nom réseau, IP, mise à jour firmware).
+| Service | ctrl | SCPD (contrat) | evt (GENA) | SCPD archivé |
+|---|---|---|---|---|
+| AVTransport | `/AVTransport/ctrl` | `/AVTransport/desc.xml` | `/AVTransport/evt` | `amp/upnp_avtransport.xml` |
+| RenderingControl | `/RenderingControl/ctrl` | `/RenderingControl/desc.xml` | `/RenderingControl/evt` | `amp/upnp_rendering.xml` |
+| ConnectionManager | `/ConnectionManager/ctrl` | `/ConnectionManager/desc.xml` | `/ConnectionManager/evt` | `amp/upnp_connectionmanager.xml` |
 
-L'APK contient aussi les pistes `:49154/MediaRenderer/desc.xml` et
-`:50100/YamahaRemoteControl/dmr.xml` (autres firmwares/modèles) — sur notre
-R-N301 seul le **8080** répond.
+Le `<yamaha:X_device>` du desc.xml contient `X_URLBase http://<ip>:80/` +
+`X_controlURL /YamahaRemoteControl/ctrl` : **l'endpoint YNC est référencé
+depuis l'UPnP**. Un seul scan SSDP donne donc IP, modèle, serial, endpoint YNC,
+icônes et page de config — c'est ce que fait `rn301.discover()` /
+`discover_one()` (détails dans le module).
 
-### SCPD AVTransport — le contrat réel du service (capturé le 2025-10-10)
+- **Icônes officielles** servies par l'ampli : `:8080/BCO_device_{sm,lrg}_icon.{jpg,png}`
+  (48×48 et 120×120).
+- **`presentationURL http://<ip>/`** : la page de configuration embarquée
+  (nom réseau, IP, mise à jour firmware).
 
-`GET :8080/AVTransport/desc.xml` → 200, 14 973 o, archivé dans
-`amp/upnp_avtransport.xml`. Reproductible avec `tools/probe_gena.py`.
+Contrairement au descripteur YNC (`/YamahaRemoteControl/desc.xml` → 404), ce
+desc.xml UPnP existe bel et bien — c'est la seule description exploitable de
+l'appareil.
 
-**15 actions déclarées** (celles en gras ne sont pas exploitées par `push.py`) :
+---
 
-| Action | Remarque |
+## 2. Contrat AVTransport et limites firmware
+
+Le SCPD (`amp/upnp_avtransport.xml`) déclare **15 actions**. Ce que le firmware
+en fait réellement (validé en live) :
+
+| Action | Comportement réel |
 |---|---|
-| `SetAVTransportURI` | utilisé |
-| **`SetNextAVTransportURI`** | **bien présent dans le SCPD** (contrairement à ce que supposait le TODO) mais sans effet en pratique → stub firmware, donc pas de gapless |
-| `GetMediaInfo` `GetTransportInfo` `GetPositionInfo` | utilisés (`state()`) |
-| **`GetDeviceCapabilities`** | live : `PlayMedia=NONE,NETWORK`, `RecMedia=NOT_IMPLEMENTED` |
-| **`GetTransportSettings`** | live : `PlayMode=NORMAL` |
-| **`GetCurrentTransportActions`** | live : `Play,Next,Previous` → dit quelles actions sont valides *maintenant*, plus besoin de deviner |
-| `Stop` `Play` `Pause` | utilisés |
-| **`Seek`** | déclaré avec `SeekMode = TRACK_NR, REL_TIME` — **le SCPD prétend donc supporter le seek en temps relatif**, alors que le firmware renvoie SOAP 500 « Seek mode not supported ». Le refus vient très probablement du `DLNA.ORG_OP=00` déclaré dans le DIDL (format annoncé non seekable), pas de l'action elle-même. Piste à retester. |
-| **`Next` `Previous`** | existent → crochets naturels pour une file d'attente côté client |
-| **`SetPlayMode`** | déclaré, mais `CurrentPlayMode` n'autorise que **`NORMAL`** → **pas de shuffle/repeat en UPnP**, le YNC reste indispensable pour ça |
+| `SetAVTransportURI` | ✅ fonctionne — charge l'URI + métadonnées DIDL |
+| `Play` / `Pause` / `Stop` | ✅ fonctionnent ; reprise après Pause à la position exacte |
+| `GetTransportInfo` / `GetPositionInfo` / `GetMediaInfo` | ✅ fonctionnent (`PushServer.state()`) |
+| `GetDeviceCapabilities` | ✅ `PlayMedia=NONE,NETWORK` |
+| `GetCurrentTransportActions` | ✅ `Play,Next,Previous` — dit quelles actions sont valides à l'instant t |
+| `GetTransportSettings` | ✅ `PlayMode=NORMAL` (seule valeur autorisée) |
+| `Seek` | ❌ **refusé** (SOAP 500 « Seek mode not supported ») alors que le SCPD déclare `REL_TIME` — le refus vient du `DLNA.ORG_OP=00` de nos DIDL ; avec OP=01 la reprise après pause tombe en `ERROR_OCCURRED`. Pas de seek utilisable. |
+| `SetNextAVTransportURI` | ❌ **stub** : accepté (RC 200) mais sans aucun effet → pas de gapless |
+| `Next` / `Previous` | déclarés ; sans piste préchargée (cf. ci-dessus), pas d'usage |
+| `SetPlayMode` | ❌ seul `NORMAL` est autorisé → pas de shuffle/repeat en UPnP (passer par le YNC) |
 
 **Variables d'état qui verrouillent le design :**
 
 ```
-LastChange            string   EVENTED   ← la seule variable notifiée (voir §GENA)
-TransportState        string   STOPPED, PLAYING, PAUSED_PLAYBACK,
-                               TRANSITIONING, NO_MEDIA_PRESENT
-TransportStatus       string   OK, ERROR_OCCURRED
-PlaybackStorageMedium string   NETWORK                     (unique)
-CurrentPlayMode       string   NORMAL                      (unique)
-TransportPlaySpeed    string   1                           (unique, pas d'avance rapide)
-NumberOfTracks        ui4      range 0..1                  ← UNE seule piste
-CurrentTrack          ui4      range 0..1
-A_ARG_TYPE_SeekMode   string   TRACK_NR, REL_TIME
-Record*               NOT_IMPLEMENTED
+TransportState     STOPPED, PLAYING, PAUSED_PLAYBACK, TRANSITIONING, NO_MEDIA_PRESENT
+TransportStatus    OK, ERROR_OCCURRED
+NumberOfTracks     ui4, range 0..1        ← UNE seule piste, pas de playlist
+TransportPlaySpeed 1 (unique)             ← pas d'avance rapide
 ```
 
-Conséquences : `NumberOfTracks 0..1` + `PlayMode NORMAL` unique → **aucune
-playlist côté renderer**, la file d'attente doit être gérée par le client
-(re-pousser un `SetAVTransportURI` à chaque fin de piste). `TransportPlaySpeed`
-à `1` → pas de vitesse variable.
+Conséquences définitives :
+- **Pas de file d'attente côté ampli** : l'enchaînement de pistes se fait côté
+  client — attendre la fin (event GENA `STOPPED` ou `PushServer.wait_stopped()`)
+  puis re-pousser un `SetAVTransportURI`. Coupure audible entre les pistes
+  (gapless impossible, `SetNextAVTransportURI` étant un stub).
+- **`TransportStatus = ERROR_OCCURRED` au repos est normal** : le renderer
+  conserve la dernière URI poussée et tente de la recharger ; si le serveur de
+  fichiers est arrêté, il reste en erreur résiduelle. Ne jamais lire
+  `ERROR_OCCURRED` seul comme un échec — le croiser avec `TransportState` et
+  l'URI courante. Un nouveau `SetAVTransportURI` valide ramène `OK`.
+- `MediaDuration` / `CurrentURIMetaData` survivent à l'arrêt du serveur de
+  fichiers → l'état renderer contient les métadonnées de la dernière piste.
 
-### Eventing GENA — ✅ fonctionne (validé en live)
+**Étanchéité YNC ↔ UPnP** (mesurée) : le push ne change **pas** l'entrée YNC —
+`Input_Sel` reste où il est et `play_info` YNC reste à `Stop` pendant que le
+renderer joue. Il faut être sur l'entrée **SERVER** pour entendre le push.
+Symétriquement, un `Play`/`Pause` envoyé à l'AVTransport pendant une écoute
+SERVER (lecture réseau) n'a **aucun effet** : la lecture réseau se pilote
+exclusivement en YNC (`Play_Control/Playback`).
 
-Les trois services déclarent un `eventSubURL`. **Le renderer honore GENA** :
+---
 
-```http
-SUBSCRIBE /AVTransport/evt HTTP/1.1
-HOST: 192.168.1.91:8080
-CALLBACK: <http://192.168.1.32:55843/cb>
-NT: upnp:event
-TIMEOUT: Second-300
-
-→ HTTP 200
-   SID:     uuid:525ceb08-c534-108c-8efe-81474a82edd9
-   TIMEOUT: Second-300                       (honoré tel quel)
-   SERVER:  KnOS/3.2 UPnP/1.0 DMP/3.5
-
-→ NOTIFY immédiat sur le callback (l'event initial imposé par UPnP)
-   NT: upnp:event   NTS: upnp:propchange   SEQ: 0
-   <e:propertyset><e:property><LastChange>
-     &lt;Event xmlns="urn:schemas-upnp-org:metadata-1-0/AVT/"&gt;
-       &lt;InstanceID val="0"&gt;
-         &lt;TransportState val="STOPPED"/&gt;
-         &lt;TransportStatus val="ERROR_OCCURRED"/&gt;
-         &lt;PlaybackStorageMedium val="NETWORK"/&gt; …
-   (LastChange = XML **échappé** dans une balise XML → double décodage)
-
-UNSUBSCRIBE + SID → 200
-```
-
-Points d'implémentation relevés :
-
-- `LastChange` est la **seule** variable `sendEvents="yes"` ; elle contient un
-  document XML *échappé* (`&lt;Event…&gt;`) qu'il faut re-parser après
-  décodage. Les variables individuelles (`TransportState`…) ne sont pas
-  notifiées séparément.
-- Le callback doit répondre **200** au `NOTIFY`, sinon l'appareil considère
-  l'abonné mort. Il doit être joignable depuis l'ampli (IP LAN, pare-feu).
-- `TIMEOUT: Second-300` est accepté tel quel → prévoir le **renouvellement**
-  du SID avant expiration (`SUBSCRIBE` avec `SID` au lieu de `NT`/`CALLBACK`).
-- `SEQ` s'incrémente à chaque NOTIFY ; un trou de séquence = events perdus.
-
-**Non implémenté dans ce projet** : ni `rn301/push.py` ni `webapp/server.py`
-n'utilisent GENA aujourd'hui (la webapp poll toujours toutes les 4 s). C'est la
-prochaine étape logique : attendre la fin d'une piste ou d'une annonce TTS sur
-un event `STOPPED` au lieu de poller `transport_info()`.
-
-### Couplage YNC ↔ UPnP : ce qui est notifié, ce qui ne l'est pas
-
-**Mesuré en live le 2025-10-10** (`tools/probe_gena_raw.py`, fenêtre de 420 s,
-manipulations au bouton physique de façade + télécommande, polling YNC de
-`Basic_Status` toutes les 0,5 s en parallèle pour corréler les deux piles).
-
-27 NOTIFY `RenderingControl` reçus, dont 26 provoqués par la manipulation :
-
-```
-t=  0.09s SEQ=0    Mute=0, Volume=50, PresetNameList=…   ← état complet (initial)
-t= 37.71s SEQ=1    Volume=52        ┐
-t= 79.46s SEQ=17   Volume=80        │  bouton physique / télécommande
-t= 82.58s SEQ=18   Volume=0         │
-t= 96.45s SEQ=21   Mute=1           │
-t= 99.81s SEQ=22   Mute=0           ┘
-t=160.14s SEQ=26   Volume=31
-```
-
-Latence : l'event `Volume=80` arrive à **79,46 s**, le polling YNC ne voit `80`
-qu'à **79,49 s** → GENA est ~30 ms **plus rapide** que la sonde. C'est ce qui
-explique la réactivité de l'app officielle sur le volume.
-
-#### ✅ Ce que GENA notifie
-
-| Changement | Service | Observé |
-|---|---|---|
-| Volume (bouton façade, télécommande) | `RenderingControl` | ✅ `Volume[Master]` |
-| Mute on/off | `RenderingControl` | ✅ `Mute[Master]=1` puis `=0` |
-| Transport du **push DLNA** | `AVTransport` | ✅ `TransportState` (voir §GENA) |
-
-#### ❌ Ce que GENA ne voit **jamais**
-
-| Manipulation effectuée | Events reçus |
-|---|---|
-| `Input_Sel` LINE1 → COAXIAL → LINE1 (t=47,9 s) | **0** |
-| `Input_Sel` LINE1 → LINE2 → LINE1 (t=104,5 s) | **0** |
-| `Input_Sel` LINE1 → SERVER (t=133,9 s) | **0** |
-| **`Power` On → Standby → On** (t=110,5 s) | **0** |
-| Lecture réseau SERVER + Play/Pause | **0** sur AVTransport |
-
-Sur 420 s, `AVTransport` n'a émis **qu'un seul** NOTIFY : l'event initial. Le
-renderer ne reflète que le push DLNA, jamais la lecture réseau pilotée en YNC —
-ce qui confirme par la mesure la séparation déjà documentée au §3 (« le push ne
-change pas l'entrée YNC »). Symétriquement, un `Play`/`Pause` envoyé à
-l'AVTransport pendant une écoute `SERVER` n'a **aucun effet** : il faut passer
-par le YNC (`Play_Control/Playback`).
-
-**Conclusion d'architecture : GENA ne remplace pas le polling YNC, il le
-complète.** Volume/mute en push instantané, tout le reste (power, source,
-play_info, navigation des listes, tuner) reste à poller.
-
-#### ⭐ Échelle de volume : UPnP == YNC (question tranchée)
-
-Volume poussé **au maximum** pendant la mesure :
-
-| canal | valeur au plafond |
-|---|---|
-| GENA `Volume[Master]` | **80** |
-| YNC `Basic_Status/Val` | **80** |
-| SCPD `allowedValueRange` | 0..100 *(déclaratif, non appliqué)* |
-
-Les deux échelles sont **identiques** : aucun mapping à écrire. Le `0..100` du
-SCPD est une déclaration générique ; le plafond réel (80 ici) vient du réglage
-« Max Volume » de l'ampli, modifiable en façade. Conséquence : `VOL_MAX` ne
-doit pas être codé en dur — si l'utilisateur monte ce réglage à 100, une lib
-bridée à 80 serait fautive.
-
-#### ⚠️ Trois pièges d'implémentation
-
-1. **`LastChange` est incrémental.** Seul `SEQ=0` contient l'état complet
-   (`PresetNameList` + `Mute` + `Volume`) ; les events suivants ne portent
-   **que la variable modifiée** (`SEQ=1..20` → uniquement `Volume`). Il faut
-   donc maintenir un état local et appliquer des deltas, pas écraser l'objet.
-2. **Les events sont modérés (coalescés).** UPnP autorise l'appareil à regrouper
-   les notifications : en tournant vite le bouton, le polling YNC a vu
-   `52→55→49→45…` tandis que GENA envoyait `52→53→45→41…` — 26 events pour
-   davantage de pas réels, avec des valeurs intermédiaires différentes. GENA
-   donne la **valeur finale fiable**, pas un historique exhaustif. Parfait pour
-   un slider d'UI, insuffisant pour tracer chaque pas.
-3. **Attributs dans l'ordre inverse.** Le XML est
-   `<Volume channel="Master" val="50"/>` : `channel` **avant** `val`. Un parseur
-   qui attend `val=` immédiatement après le nom de balise ne voit rien (bug
-   rencontré pendant la mesure : les events semblaient vides alors qu'ils ne
-   l'étaient pas).
-
-### `TransportStatus = ERROR_OCCURRED` au repos — explication
-
-Observé ampli « au repos » : `GetTransportInfo` → `CurrentTransportState =
-STOPPED` **et** `CurrentTransportStatus = ERROR_OCCURRED`, alors que
-`GetMediaInfo` renvoie encore l'URI du dernier push :
-
-```
-CurrentURI     http://192.168.1.32:9000/audio/1/
-MediaDuration  0:04:12
-NrTracks       1
-```
-
-→ Le renderer **conserve la dernière URI poussée** après l'arrêt de notre
-serveur de fichiers. Il tente de la recharger, n'y arrive plus, et passe en
-`ERROR_OCCURRED`. Ce n'est donc pas un état d'erreur « actif » mais une URI
-périmée. Conséquences :
-
-- ne jamais interpréter `ERROR_OCCURRED` seul comme un échec du push en cours :
-  toujours le croiser avec `TransportState` et l'URI courante ;
-- un `SetAVTransportURI` valide le ramène à `OK` ;
-- à la fermeture du serveur de push, envoyer `Stop` (voire re-pousser une URI
-  vide) pour ne pas laisser l'ampli en erreur ;
-- `MediaDuration` survit au serveur de fichiers → l'ampli met en cache les
-  métadonnées, la webapp peut les relire pour afficher la dernière piste.
-
-### Formats acceptés en push (GetProtocolInfo → Sink)
-
-```
-audio/L16;rate=44100;channels=1|2   (LPCM, DLNA.ORG_PN=LPCM)
-audio/L16;rate=48000;channels=1|2   (LPCM)
-audio/mpeg                          (MP3, DLNA.ORG_PN=MP3)
-audio/x-ms-wma                      (WMABASE, WMAFULL)
-http-wavetunes:*:audio/x-ms-wma     (WMA streaming)
-```
-
-⚠️ La liste Sink officielle n'annonce que **MP3 / WMA / LPCM(WAV)** — mais
-l'app officielle envoie aussi dans ses DIDL du `audio/flac`, `audio/wav`,
-`audio/mp4`, `audio/3gpp` (strings APK lignes 564-569). Le décodeur du R-N301
-(entrée SERVER) supporte FLAC/WAV/AAC/ALAC : le renderer accepte probablement
-plus que ce qu'il déclare. **À tester format par format.**
-
-Pour tout le reste : transcoder à la volée en WAV/LPCM ou MP3 (ffmpeg) et le
-push fonctionne à coup sûr.
-
-## 2. Comment l'app officielle fait son "module audio du téléphone"
-
-Package décompilé : `com.yamaha.av.localfilecontroller` (22 classes,
-`apk/decompiled/src/com/yamaha/av/localfilecontroller/`).
-
-Architecture (téléphone = serveur de fichiers + point de contrôle UPnP) :
-
-```
-┌──────────────────────────────┐         ┌────────────────────────────┐
-│  NP Controller (téléphone)   │         │       Yamaha R-N301        │
-│                              │  SOAP   │                            │
-│ p.java  (control point)  ────┼────────►│ :8080/AVTransport/ctrl     │
-│   SetAVTransportURI + Play   │         │   SetAVTransportURI        │
-│                              │         │         │                  │
-│ h.java  ServerSocket(0)      │         │         ▼                  │
-│ i.java  mini serveur HTTP ◄──┼─────────┼── GET /audio/<id>/ (Range) │
-│   sert les fichiers          │  HTTP   │   l'ampli tire le flux     │
-│ MediaHttpService.java :      │         │                            │
-│   MediaStore.Audio (biblio)  │         │                            │
-└──────────────────────────────┘         └────────────────────────────┘
-```
-
-Détails relevés dans le code décompilé :
-
-- **`h.java`** : `new ServerSocket(0)` → port aléatoire, "Web Server is
-  listening on port …", boucle `accept()` (soTimeout 1 s).
-- **`i.java`** : serveur HTTP minimal. Routes regex
-  `GET /audio/(.+)/` et `GET /albumart/(.+)`. Content-Type choisi par
-  l'extension du fichier (wav/wave, mp3, m4a/mp4/aac, 3gp/3g2, fla/flac,
-  wma/asf). Support **`Range: bytes=`** → `206 Partial Content` +
-  `Content-Range` (c'est comme ça que le seek fonctionne). Header
-  `TransferMode.DLNA.ORG: Streaming` et `Accept-Ranges: bytes`.
-- **`p.java`** : le point de contrôle. Construit `SetAVTransportURI` avec
-  `CurrentURI = http://<ip-tel>:<port>/audio/<id>/` et
-  `CurrentURIMetaData` = **DIDL-Lite** (`dc:title`, `upnp:artist`,
-  `upnp:album`, `upnp:albumArtURI`, `res protocolInfo="http-get:*:audio/…"`
-  avec `DLNA.ORG_OP` + `DLNA.ORG_FLAGS=017…`). Puis `Play`, `Pause`, `Stop`,
-  `GetTransportInfo` (lecture de `CurrentTransportState`).
-- **`MediaHttpService.java`** : service Android foreground (notification),
-  requête la bibliothèque via `MediaStore$Audio$Media`, playlists, album art
-  (`content://media/external/audio/albumart`).
-
-Conclusion : **rien de propriétaire** — c'est du DLNA push standard. Toute
-URL audio servie en HTTP sur le LAN peut être envoyée à l'ampli.
-
-## 3. Protocole de push (recette minimale)
+## 3. Protocole de push (recette)
 
 ```http
 POST /AVTransport/ctrl HTTP/1.1
-Host: 192.168.1.91:8080
+Host: <ip>:8080
 Content-Type: text/xml; charset="utf-8"
 SOAPAction: "urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI"
 
-<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"
-            xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
-      <InstanceID>0</InstanceID>
-      <CurrentURI>http://192.168.1.32:9000/audio/1/</CurrentURI>
-      <CurrentURIMetaData>&lt;DIDL-Lite …&gt;…&lt;/DIDL-Lite&gt;</CurrentURIMetaData>
-    </u:SetAVTransportURI>
-  </s:Body>
-</s:Envelope>
+<s:Envelope …><s:Body>
+  <u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+    <InstanceID>0</InstanceID>
+    <CurrentURI>http://192.168.1.32:9000/audio/1/</CurrentURI>
+    <CurrentURIMetaData>&lt;DIDL-Lite …&gt;…&lt;/DIDL-Lite&gt;</CurrentURIMetaData>
+  </u:SetAVTransportURI>
+</s:Body></s:Envelope>
 ```
 
-Puis `#Play` (`<Speed>1</Speed>`). `CurrentURIMetaData` peut rester vide
-(`NOT_IMPLEMENTED`) — l'ampli joue quand même, seules les infos d'affichage
+puis `#Play` (`<Speed>1</Speed>`). `CurrentURIMetaData` peut valoir
+`NOT_IMPLEMENTED` — l'ampli joue quand même, seules les infos d'affichage
 manquent.
 
-États `GetTransportInfo` observés : `NO_MEDIA_PRESENT` (rien de chargé),
-`STOPPED` / `PLAYING` / `PAUSED_PLAYBACK` après push.
+**Métadonnées DIDL-Lite** (`rn301.push.didl_metadata()`) : `dc:title`,
+`upnp:artist`, `upnp:album`, `upnp:albumArtURI`, et l'attribut critique du
+`<res>` :
 
-Points d'attention (vus en live) :
+```
+protocolInfo="http-get:*:<mime>:DLNA.ORG_OP=<op>;DLNA.ORG_FLAGS=01700000000000000000000000000000"
+```
 
-- **Le push ne change PAS l'entrée YNC** : `Input_Sel` reste sur `SERVER`,
-  `play_info` YNC reste à `Stop` pendant que le renderer joue. Les deux
-  couches (YNC et UPnP) coexistent — l'état de lecture push se lit via
-  `GetTransportInfo`/`GetPositionInfo`, pas via YNC.
-- **`Seek` n'est pas supporté** par ce renderer (SOAP 500 "Seek mode not
-  supported") → pas de seek/scrub possible, seulement Play/Pause/Stop.
-  La reprise après Pause repart d'où on s'était arrêté, mais déclarer le
-  format non-seekable (`DLNA.ORG_OP=00`) est impératif pour wav/flac/mp3
-  sous peine d'`ERROR_OCCURRED` à la reprise.
-- États observés : `NO_MEDIA_PRESENT` → `TRANSITIONING` (après SetURI/Play)
-  → `PLAYING` → `PAUSED_PLAYBACK` → `STOPPED`. Fin de piste = `STOPPED`.
-- L'URL doit être **joignable depuis l'ampli** (IP LAN du serveur, pas
-  127.0.0.1 ; attention aux pare-feu Windows sur le port du serveur HTTP —
-  l'ampli doit pouvoir atteindre le port de push, 9000 par défaut).
-- Serveur HTTP : répondre à `HEAD`/`GET` avec `Content-Length` et
-  `Accept-Ranges: bytes`, honorer `Range` (l'ampli envoie parfois
-  `Range: bytes=N-`, répondre `206` + `Content-Range`), ne pas exiger de
-  User-Agent particulier.
-- RC SOAP : faute `<s:Fault>` = URI injouable (format non supporté, serveur
-  injoignable…). Toujours lire le body de réponse.
-- **Une seule instance à la fois** : si plusieurs serveurs de push écoutent
-  sur le même port (vieilles instances non tuées), l'ampli peut tirer le
-  fichier depuis une instance qui ne sert plus rien → `ERROR_OCCURRED`.
+`DLNA.ORG_OP` par format (mapping recopié de l'app officielle) — **OP=00
+impératif** pour wav/mp3/flac/wma (non seekable), OP=01 seulement pour
+mp4/3gpp. Un OP=01 sur un format que le renderer ne sait pas seeker →
+`ERROR_OCCURRED` à la reprise après pause.
 
-## 4. Implémentation dans le projet
+**Serveur de fichiers** (`rn301.push.FileServer`, équivalent du téléphone dans
+l'app) : l'ampli vient faire un `GET` sur l'URI poussée. Exigences :
+- `GET`/`HEAD` avec `Content-Length` et `Accept-Ranges: bytes` ;
+- honorer `Range: bytes=N-` → `206 Partial Content` + `Content-Range` ;
+- header `TransferMode.DLNA.ORG: Streaming` ; aucun User-Agent particulier ;
+- `/albumart/<n>` pour la pochette (DIDL `albumArtURI`).
 
-- **`rn301/push.py`** — réplique fidèle de `localfilecontroller` :
-  - `FileServer` : serveur HTTP mono-fichier (Range/206, HEAD, mime par
-    extension) — équivalent de `h.java`+`i.java`
-  - `Renderer` : client SOAP AVTransport (set_uri/play/pause/stop/
-    transport_info/position_info/seek*) — équivalent de `p.java`
-  - `PushServer` : façade (`push_file()`, `push_url()`, `state()`)
-  - `didl_metadata()` : DIDL-Lite avec le bon `DLNA.ORG_OP` par format
-  - \* `seek()` implémenté mais **refusé par ce firmware**
-- **`webapp/server.py`** — routes ajoutées :
-  - `POST /api/upload?name=x.wav` (body binaire brut) → sauve dans `music/`
-  - `POST /api/push {file|url, title?, artist?, album?}` → sert + pousse + Play
-  - `POST /api/pushctl {action: Play|Pause|Stop|Seek}` → transport
-  - `GET /api/state` inclut désormais `push_state` (état renderer UPnP)
-  - UI : carte "📲 Push audio" (upload fichier du navigateur/téléphone, champ
-    URL webradio/NAS, boutons transport)
-  - options : `--push-port` (défaut 9000), `--music` (défaut `music/`),
-    `--no-push`
-- **`tools/test_push.py`** — test standalone (serveur + push d'un fichier).
-- **`tools/probe_gena.py`** — sonde **read-only** du renderer : dump du SCPD
-  AVTransport (actions + variables d'état), capacités live
-  (`GetDeviceCapabilities`, `GetCurrentTransportActions`, `GetTransportInfo`,
-  `GetMediaInfo`, `GetPositionInfo`, `GetTransportSettings`) et test
-  SUBSCRIBE/NOTIFY/UNSUBSCRIBE. Ne modifie aucun état de l'ampli.
-- **`tools/probe_gena_raw.py`** — sonde de **couplage** : body brut horodaté de
-  chaque NOTIFY `RenderingControl` + `AVTransport`, avec polling YNC de
-  `Basic_Status` en parallèle. Sert à mesurer ce que GENA voit / ne voit pas
-  quand on manipule l'ampli physiquement (voir §Couplage YNC ↔ UPnP).
+**Contraintes réseau** :
+- l'URL doit être joignable **depuis l'ampli** : IP LAN du serveur (pas
+  127.0.0.1), pare-feu ouvert sur le port de push (9000 par défaut) ;
+- **un seul serveur de push à la fois** sur un port donné : si une vieille
+  instance survit, l'ampli peut tirer le fichier depuis un serveur qui ne sert
+  plus rien → `ERROR_OCCURRED` ;
+- faute SOAP `<s:Fault>` = URI injouable (format non supporté, serveur
+  injoignable…) — toujours lire le `errorDescription`.
 
-### Tests live réalisés
+**États du transport** : `NO_MEDIA_PRESENT` (rien de chargé) → `TRANSITIONING`
+(après SetURI/Play) → `PLAYING` → `PAUSED_PLAYBACK` → `STOPPED`. Fin de piste =
+`STOPPED`.
 
-| Test | Résultat |
+---
+
+## 4. Formats audio
+
+Sink déclaré par `GetProtocolInfo` :
+
+```
+audio/L16;rate=44100;channels=1|2   (LPCM)     audio/mpeg       (MP3)
+audio/L16;rate=48000;channels=1|2   (LPCM)     audio/x-ms-wma   (WMA)
+http-wavetunes:*:audio/x-ms-wma     (WMA streaming)
+```
+
+Le décodeur du R-N301 (entrée SERVER) supporte plus que ce que le renderer
+déclare. État des validations live :
+
+| Format | Push direct |
 |---|---|
-| WAV LPCM 44.1k stéréo (sine 15 s) | ✅ PLAYING, l'ampli GET le fichier |
-| Pause → Play | ✅ PAUSED_PLAYBACK → PLAYING, rel_time conservé |
-| MP3 192k | ✅ PLAYING, durée piste correcte |
-| Seek REL_TIME | ❌ SOAP 500 "Seek mode not supported" |
-| DIDL avec OP=01 sur WAV | ❌ ERROR_OCCURRED à la reprise (→ OP=00) |
-| push_file via webapp `/api/push` | ✅ bout en bout (upload → push → play) |
-| Entrée YNC pendant le push | reste `SERVER`, play_info YNC inchangé |
-| SCPD `GET :8080/AVTransport/desc.xml` | ✅ 200, 15 actions, archivé `amp/upnp_avtransport.xml` |
-| `GetDeviceCapabilities` | ✅ `PlayMedia=NONE,NETWORK` |
-| `GetCurrentTransportActions` | ✅ `Play,Next,Previous` |
-| `GetTransportSettings` | ✅ `PlayMode=NORMAL` (seule valeur autorisée) |
-| **GENA `SUBSCRIBE /AVTransport/evt`** | ✅ **200 + SID, TIMEOUT 300 honoré, 1 NOTIFY initial (SEQ 0), UNSUBSCRIBE 200** |
-| GENA `RenderingControl/evt` + volume physique | ✅ 26 NOTIFY `Volume[Master]`/`Mute[Master]`, ~30 ms plus rapide que le polling YNC |
-| GENA + changement d'`Input_Sel` / `Power` / lecture SERVER | ❌ **aucun event** — les deux piles sont étanches hors volume |
-| Échelle de volume UPnP vs YNC, au plafond | ✅ **identiques** (80 = 80) ; le `0..100` du SCPD est déclaratif |
-| `GetMediaInfo` après arrêt du serveur de fichiers | URI conservée, `TransportStatus=ERROR_OCCURRED` (voir §explication) |
+| WAV / LPCM 44.1 kHz stéréo | ✅ |
+| MP3 | ✅ (durée piste correcte) |
+| FLAC | ✅ |
+| MP4 / M4A (AAC) | ✅ |
+| WMA | non testé |
+| Webradio (flux HTTP direct via `push_url`) | non testé |
+| OGG / Opus | non testé (mime servi par la lib, décodage ampli inconnu) |
 
-### TODO / reste à tester
+Format non accepté → transcoder à la volée en WAV/LPCM ou MP3 (ffmpeg) :
+ce sont les formats les plus sûrs du renderer. LPCM = aussi le format idéal
+pour tout flux généré (TTS, mix…) : durée connue → `Content-Length` exact.
 
-- FLAC / MP4-AAC / WMA malgré la liste Sink restrictive (l'app les déclare)
-- Push d'une **webradio MP3** (`push_url` avec flux http direct)
-- Enchaînement de pistes (re-pousser à la fin via polling `STOPPED`, ou via
-  **event GENA** maintenant qu'il est validé)
-- ~~`SetNextAVTransportURI` : absent du SCPD ?~~ → **vérifié : présent dans le
-  SCPD mais sans effet** (stub firmware) → pas de gapless possible
-- ~~`GET :8080/AVTransport/desc.xml` à vérifier~~ → **fait**, voir §SCPD
-- **Implémenter GENA** dans `push.py` (serveur de callback + renouvellement SID
-  + décodage `LastChange`) puis l'utiliser dans la webapp à la place du polling
-- **Retester `Seek REL_TIME` avec `DLNA.ORG_OP=01`** : le SCPD déclare
-  `REL_TIME` supporté, le refus observé vient peut-être du drapeau OP et non de
-  l'action (mais OP=01 provoquait `ERROR_OCCURRED` à la reprise → trade-off)
-- ~~Volume UPnP via `RenderingControl` (double pilotage YNC/UPnP)~~ → **mesuré** :
-  échelle **identique** au YNC (80 = 80 au plafond, 0..100 du SCPD déclaratif),
-  et GENA notifie les changements faits à la télécommande/au bouton physique.
-  Reste à tester : un `SetVolume` **UPnP** est-il visible en YNC (et inversement),
-  et le canal UPnP fonctionne-t-il pendant un RC=3 YNC ?
-- Lire le réglage « Max Volume » de l'ampli au lieu de `VOL_MAX = 80` en dur
-  (chemin YNC à trouver, probablement sous `Main_Zone/Volume/` ou `System/Config/`)
-- `Next` / `Previous` : comportement réel sans `SetNextAVTransportURI` fonctionnel
-- Capture de `/ConnectionManager/desc.xml` et `/RenderingControl/evt` (mêmes
-  questions GENA pour le volume)
+---
 
-## 5. Ce que ça débloque
+## 5. Eventing GENA
 
-- **Jouer n'importe quel fichier du PC/téléphone** sur la chaîne, sans NAS ni
-  MiniDLNA — la webapp devient serveur + télécommande.
-- **Stream généré à la volée** : ffmpeg (transcodage, mix, TTS, webradios
-  non-vTuner…) → tant que ça sort en MP3/WAV sur un port HTTP, l'ampli joue.
-- **Contourner vTuner** pour les webradios : pousser directement l'URL du
-  flux (si le format passe) au lieu de passer par NET RADIO.
-- Volume/mute disponibles aussi en UPnP (`RenderingControl`) — double pilotage
-  YNC + UPnP possible.
+Les trois services déclarent un `eventSubURL` et **le renderer honore GENA**
+(validé en live) :
+
+```http
+SUBSCRIBE /AVTransport/evt HTTP/1.1        → 200
+  CALLBACK: <http://<ip-client>:<port>/cb>    SID: uuid:…
+  NT: upnp:event                              TIMEOUT: Second-300   ← plafond
+  TIMEOUT: Second-300                         (Second-600 demandé → 300 rendu)
+
+NOTIFY (initial immédiat, puis à chaque changement)
+  NTS: upnp:propchange   SEQ: 0,1,2…
+  <e:propertyset><e:property><LastChange>&lt;Event…&gt;…
+
+UNSUBSCRIBE + SID                          → 200
+```
+
+### Portée réelle (mesurée sur 420 s avec manipulations physiques)
+
+| GENA notifie ✅ | GENA ne voit jamais ❌ |
+|---|---|
+| `Volume[Master]` — bouton de façade, télécommande (~30 ms plus vite que le polling YNC) | `Power` On ↔ Standby |
+| `Mute[Master]` | `Input_Sel` (changements de source) |
+| `TransportState` du **push DLNA** uniquement | lecture réseau SERVER / `play_info` YNC |
+| | tuner, navigation des listes |
+
+**GENA complète le polling YNC, il ne le remplace pas.** Seule la partie
+volume/mute + transport du push est événementielle ; power, source, play_info,
+listes et tuner restent à interroger en YNC.
+
+### Comportements à connaître (mesurés)
+
+1. **`LastChange` est la seule variable `sendEvents="yes"`** : un document XML
+   *échappé* dans une balise XML (double décodage) ; les variables
+   individuelles ne sont pas notifiées séparément.
+2. **Incrémental** : seul `SEQ=0` porte l'état complet (`PresetNameList` +
+   `Mute` + `Volume`) ; les NOTIFY suivants ne contiennent que la variable
+   modifiée → il faut **accumuler** un état local (deltas), jamais écraser.
+3. **Modéré (coalescé)** : l'ampli regroupe les notifications — en tournant
+   vite le bouton de volume, GENA envoie moins d'events que de pas réels et
+   saute des valeurs intermédiaires. La **valeur finale est fiable**,
+   l'historique non.
+4. **Attributs inversés** : `<Volume channel="Master" val="50"/>` — `channel`
+   avant `val` (piège pour les regex naïves ; parsing ElementTree obligatoire).
+5. **TIMEOUT plafonné à 300 s** par le firmware → renouvellement du SID à
+   caler vers 240 s (SUBSCRIBE avec `SID` au lieu de `NT`/`CALLBACK`).
+6. **Le callback doit répondre `200`** aux NOTIFY, sinon l'ampli déclare
+   l'abonné mort. Il doit être joignable depuis l'ampli (IP LAN, pare-feu).
+7. **Trous de `SEQ`** = events perdus → se re-synchroniser en SOAP
+   (`GetTransportInfo`…) ; `GenaClient.missed()` les compte.
+
+### Échelle de volume : UPnP == YNC
+
+Mesuré au plafond : GENA `Volume[Master]` = **80** et YNC
+`Basic_Status/Val` = **80** au même instant. Les deux échelles sont
+identiques, aucun mapping à écrire. Le `allowedValueRange 0..100` du SCPD
+RenderingControl est **déclaratif et non appliqué** : le plafond réel vient du
+réglage « Max Volume » de l'ampli (façade), qui n'expose aucun chemin YNC de
+lecture. La lib travaille donc sur l'échelle protocole 0..100 et laisse le
+firmware clampler (+ `RN301(max_volume=N)` optionnel, plafond logiciel).
+
+Le contrôle du volume reste fait en **YNC** par la lib : le canal
+`SetVolume`/`SetMute` du RenderingControl existe (mêmes valeurs) mais n'est
+pas exploité — une seule voie d'écriture, deux voies de lecture (YNC + GENA).
+
+---
+
+## 6. API de la lib
+
+### `PushServer` (`rn301/push.py`) — façade
+
+```python
+push = PushServer(amp, serve_host="0.0.0.0", serve_port=9000, renderer_port=8080)
+
+push.push_file("morceau.flac", title="", artist="", album="", play=True)
+    # sert le fichier (FileServer) + extrait tags/pochette intégrés (ID3v2,
+    # FLAC Vorbis/PICTURE, MP4 atoms) + SetAVTransportURI (DIDL complet) + Play
+push.push_url("http://nas/radio.mp3", title="", mime="audio/mpeg", play=True)
+    # URL déjà servie sur le LAN : pas de serveur local
+
+push.play(); push.pause(); push.stop()      # transport
+push.state()        # {'state', 'status', 'uri', 'rel_time', 'track_duration'}
+push.last_meta      # {'title', 'artist', 'album', 'cover'} du dernier push
+
+# --- événements (GENA) — optionnels, paresseux, passifs
+push.on_transport(lambda state, changed: ...)  # callback à chaque NOTIFY
+push.wait_stopped(timeout=None, arm_timeout=10.0)
+    # bloque jusqu'à la fin de la piste, en 2 phases : attend d'abord PLAYING
+    # (anti-course avec un vieux STOPPED) puis STOPPED/NO_MEDIA_PRESENT
+push.transport_state()                         # état courant (cache, 0 requête)
+push.close()                                   # UNSUBSCRIBE + stop serveur
+```
+
+La lib ne gère **aucune file d'attente** : chaque `push_file()` est
+indépendant, c'est le client qui décide quoi pousser ensuite (une boucle
+`for f in files: push_file(f); wait_stopped()` suffit).
+
+### `GenaClient` (`rn301/gena.py`) — abonné GENA générique
+
+```python
+gena = GenaClient(amp)
+gena.subscribe("RenderingControl", lambda svc, changed: ...)  # + AVTransport
+gena.state("RenderingControl")   # état accumulé {'Volume': {'channel','val'}, …}
+gena.var("RenderingControl", "Volume")
+gena.missed("AVTransport")       # events perdus (trous de SEQ)
+gena.wait_for(service, predicate, timeout)    # bloque jusqu'à condition
+gena.close()                     # UNSUBSCRIBE propre (aussi via `with`)
+```
+
+Serveur de callback intégré (répond 200), renouvellement automatique des SID
+(~240 s, re-SUBSCRIBE complet sur 404/412), thread-safe. Self-test live :
+`python -m rn301.gena [durée] [ip]`.
+
+### Briques internes
+
+- `Renderer` : client SOAP AVTransport (`set_uri`, `play`, `pause`, `stop`,
+  `transport_info`, `position_info`, `seek`* — *refusé par le firmware)
+- `FileServer` : serveur HTTP mono-fichier (Range/206, HEAD, mime par
+  extension, `/albumart`)
+- `didl_metadata()` : constructeur DIDL-Lite (OP par format)
+- `extract_tags()` / `extract_cover()` : lecture des métadonnées et pochettes
+  intégrées (ID3v2 APIC, FLAC Vorbis/PICTURE, MP4 atoms) — stdlib only
+
+YNC et SOAP partagent un **verrou par ampli** (`rn301/_locks.py`) : le firmware
+ne traite qu'une requête à la fois, la sérialisation est automatique entre
+tous les clients `RN301`/`Renderer` d'une même IP.
+
+---
+
+## 7. L'app officielle, pour référence
+
+Le push de la lib est une réplique du module `com.yamaha.av.localfilecontroller`
+de NP Controller (22 classes décompilées) : le téléphone ouvre un
+`ServerSocket(0)`, sert ses fichiers MediaStore en HTTP (routes `GET /audio/<id>/`
+et `/albumart/<id>`, Range/206, `TransferMode.DLNA.ORG: Streaming`), et un point
+de contrôle envoie `SetAVTransportURI` (DIDL avec `DLNA.ORG_OP` +
+`DLNA.ORG_FLAGS=017…`) puis `Play`. Rien de propriétaire : du DLNA standard —
+toute URL audio servie en HTTP sur le LAN peut être envoyée à l'ampli.
+
+Ce que ça débloque : jouer n'importe quel fichier du PC/téléphone sans NAS,
+des flux générés à la volée (ffmpeg : transcode, TTS, mix), des webradios hors
+vTuner (URL directe), un contrôle depuis plusieurs clients.
+
+---
+
+## Outils de reproduction
+
+| Outil | Rôle |
+|---|---|
+| `tools/probe_gena.py` | sonde **read-only** : dump SCPD AVTransport, capacités live, cycle SUBSCRIBE/NOTIFY/UNSUBSCRIBE |
+| `tools/probe_gena_raw.py` | mesure de couplage : body brut horodaté des NOTIFY + polling YNC parallèle (c'est lui qui a produit les tableaux du §5) |
+| `tools/test_push.py` | push standalone d'un fichier (serveur + SetAVTransportURI + Play) |
+| `python -m rn301.discover` | scan SSDP → identité complète de l'ampli |
+| `python -m rn301.gena 60` | écoute live des events GENA |
+
+Archives brutes : `amp/upnp_desc.xml`, `amp/upnp_avtransport.xml`,
+`amp/upnp_rendering.xml`, `amp/upnp_connectionmanager.xml`.

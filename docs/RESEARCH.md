@@ -79,10 +79,13 @@ Pas d'entrée IR (REMOTE IN) au dos non plus — juste le capteur IR en façade.
 - Usage dans l'app (`com/yamaha/npcontroller/b/t.java` + `d/ao.java`) :
   - `7F0146B9` = touche **SHUFFLE** (`q.e("On"/"Off")`, op 4100)
   - `7F0145BA` = touche **REPEAT** (`q.d("Single"/"All"/"Off")`, op 4099)
-- **Format du code découvert** : `7F01` (préfixe Yamaha) + `XX` (touche) + `~XX` (complément).
+- **Format du code découvert** : `7F01` + `XX` (touche) + `~XX` (complément).
   Vérif : `0x46 XOR 0xB9 = 0xFF`, `0x45 XOR 0xBA = 0xFF`.
   → **Seulement 256 codes possibles**, brute-force trivial.
   Codes connus : `0x46` = Shuffle, `0x45` = Repeat.
+  *(Interprétation corrigée plus tard : NEC1 étendu — `7F` device 127, `01`
+  **vrai sub-device** (127+1 ≠ 255), `XX` = OBC, `~XX` = complément. C'est ce
+  qui explique l'échec des scans sur `7A01`/`7A85` : mauvais device.)*
 - `tools/scan_remote.py` : scanne les 256 codes en observant power/volume/input/mute via YNC.
   Les effets non observables (Balance, Speaker A/B, menus) demandent une vérif visuelle/auditive.
 
@@ -114,15 +117,91 @@ Pas d'entrée IR (REMOTE IN) au dos non plus — juste le capteur IR en façade.
    récepteur IR (VS1838B) ou trouver une base de codes (LIRC / remotes centra).
 3. Renoncer pour ces fonctions et faire un beau contrôleur avec le reste.
 
+## Session 2025-10 — MediaRenderer UPnP :8080, push DLNA, eventing GENA
+
+> Faits consolidés et API : `docs/DLNA_PUSH.md`. Ici : la provenance et les
+> conditions de mesure.
+
+### Découverte du renderer
+- `GET :8080/MediaRenderer/desc.xml` → 200 (contre 404 pour tout descripteur
+  YNC) : friendlyName, UDN, 3 services (AVTransport / RenderingControl /
+  ConnectionManager), bloc vendor `<yamaha:X_device>` avec `X_URLBase` +
+  `X_controlURL` → l'endpoint YNC est découvrable via SSDP.
+- Décompilation du module `com.yamaha.av.localfilecontroller` de l'app (22
+  classes) : téléphone = serveur HTTP (Range/206) + point de contrôle SOAP.
+  Mapping `DLNA.ORG_OP` par format recopié de `p.java`.
+- Implémentation `rn301/push.py` validée en live : WAV/LPCM ✅, MP3 ✅, FLAC ✅,
+  pause/reprise avec `rel_time` conservé ✅. `Seek` → SOAP 500 « mode not
+  supported » ; piége confirmé : déclarer OP=01 sur un WAV → `ERROR_OCCURRED`
+  à la reprise. `SetNextAVTransportURI` accepté mais **stub** (aucun effet) →
+  pas de gapless. SCPD AVTransport capturé (`amp/upnp_avtransport.xml`, 15
+  actions, `NumberOfTracks 0..1`, `PlayMode NORMAL` seul).
+- `TransportStatus=ERROR_OCCURRED` au repos expliqué : le renderer conserve la
+  dernière URI poussée et tente de la recharger après l'arrêt du serveur de
+  fichiers — erreur résiduelle, pas un état actif.
+
+### Mesure GENA (tools/probe_gena.py + probe_gena_raw.py)
+- Protocole validé : SUBSCRIBE → 200 + SID, `TIMEOUT: Second-600` demandé →
+  **`Second-300` rendu** (plafond firmware), 1 NOTIFY initial immédiat (SEQ=0,
+  état complet), UNSUBSCRIBE → 200. Stack `KnOS/3.2 UPnP/1.0 DMP/3.5`.
+- Couplage YNC↔UPnP mesuré sur **420 s** avec manipulations physiques (bouton
+  de façade + télécommande), polling YNC `Basic_Status` toutes les 0,5 s en
+  parallèle : 27 NOTIFY RenderingControl (volume/mute, ~30 ms **avant** que le
+  polling YNC voie le changement), 1 seul AVTransport (l'initial). Zéro event
+  sur Power, Input_Sel, lecture réseau SERVER → **GENA complète le polling, ne
+  le remplace pas**. Les deux piles sont étanches : Play/Pause AVTransport
+  pendant une écoute SERVER = aucun effet.
+- Pièges mesurés : `LastChange` incrémental (SEQ=0 complet, ensuite deltas),
+  events coalescés (valeurs intermédiaires sautées, finale fiable), attributs
+  `channel` avant `val` (regex naïve = events « vides »), `ERROR_OCCURRED`
+  résiduel.
+- Échelle de volume **tranchée** : au plafond, GENA `Volume[Master]`=80 et YNC
+  `Basic_Status/Val`=80 au même instant → échelles identiques, le `0..100` du
+  SCPD est déclaratif. Le réglage « Max Volume » (façade) n'a **aucun chemin
+  YNC de lecture** (absent des ~90 ops de l'APK et de `probe_gets.json`).
+
+## Session 2025-10 (bis) — Consolidation : la recherche devient la lib
+
+Tout ce qui était « validé mais pas implémenté » est passé dans le code,
+avec tests hors-ligne (`tests/`, 27 tests) et validation live :
+
+- **`rn301/gena.py`** : abonné GENA de production (callback HTTP 200,
+  renouvellement SID ~240 s + re-SUBSCRIBE sur 404/412, LastChange
+  double-décodé et accumulé par deltas, trous de SEQ, `wait_for`). Validé
+  live sur l'ampli (volume façade/télécommande reçus en push).
+- **`rn301/discover.py`** : découverte SSDP (M-SEARCH MediaRenderer+rootdevice,
+  filtre manufacturer/model, dédoublonnage UDN, LOCATION≠émetteur écartée) →
+  IP, modèle, serial, endpoint YNC via `X_URLBase`, icônes, presentationURL.
+  Validé live bout en bout (`discover_one()` → `RN301(host).basic_status()`).
+  Parsing testé sur le desc.xml réel archivé.
+- **`PushServer`** : `on_transport(callback)` + `wait_stopped()` deux phases
+  (armement PLAYING puis STOPPED — anti-course vieux STOPPED) + `close()`.
+  Paresseux : aucun abonnement GENA sans usage explicite. Pas de file
+  d'attente dans la lib (décision de design : la lib notifie, le client décide).
+- **Fixes** : pochette push `/albumart` en 404 (`cover_data` lu sur le mauvais
+  objet) ; verrou partagé par ampli YNC+SOAP (`_locks.py`, une seule requête à
+  la fois) ; volume = échelle protocole 0..100 + clamp firmware +
+  `max_volume=` logiciel optionnel (le 80 codé en dur était faux si « Max
+  Volume » façade ≠ 80).
+- **MP4/M4A (AAC) validé en push** ✅ (test utilisateur). WMA : non testé, hors
+  intérêt.
+- Dernier contrat non archivé capturé : `amp/upnp_connectionmanager.xml`.
+- Décision : **pas de client RenderingControl** (SetVolume UPnP) — le contrôle
+  volume reste en YNC, GENA fournit déjà les events ; une seconde voie
+  d'écriture serait du code mort.
+
 ## Arborescence du projet
 ```
-├── NETWORK PLAYER CONTROLLER_4.60_APKPure.apk
-├── R-N301_om_G.pdf          # manuel
-├── manual.txt               # manuel converti en texte
-├── apk/
-│   ├── extracted/           # APK dézippé
-│   └── decompiled/          # strings_all.txt, strings_ync.txt, classes.txt, src/
-├── amp/                     # réponses live de l'ampli (system_config.xml, input_items.xml)
-├── docs/RESEARCH.md         # ce fichier
-└── tools/                   # scripts d'analyse (androguard)
+├── rn301/                   # ⭐ la librairie
+│   ├── rn301.py             # client YNC (power/volume/input/playback/listes/tuner/IR)
+│   ├── push.py              # push DLNA (FileServer + Renderer SOAP + PushServer)
+│   ├── gena.py              # abonné GENA (GenaClient)
+│   ├── discover.py          # découverte SSDP
+│   └── _locks.py            # verrou partagé par ampli
+├── webapp/                  # serveur web de contrôle (page + API JSON)
+├── tests/                   # tests hors-ligne (unittest, faux renderer UPnP)
+├── docs/                    # RESEARCH.md (journal), YNC_COMMANDS.md, DLNA_PUSH.md
+├── tools/                   # scripts de reverse et sondes live
+├── amp/                     # réponses live archivées (JSON, desc.xml, SCPD)
+└── apk/                     # décompilation APK (gitignoré)
 ```

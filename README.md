@@ -74,11 +74,14 @@ provenance et horodatage des validations live),
 ## 🚀 Démarrage rapide
 
 ```bash
-# librairie
-python -c "from rn301 import RN301; amp=RN301('192.168.1.91'); amp.power_on(); amp.set_volume(25)"
+# librairie — découverte SSDP automatique, pas besoin de connaître l'IP
+python -c "from rn301 import discover_one, RN301; amp=RN301(discover_one()['host']); amp.power_on(); amp.set_volume(25)"
 
 # serveur web (page de contrôle sur http://localhost:8080)
 python -m webapp.server --port 8080 --amp 192.168.1.91
+
+# tests hors-ligne (aucun ampli requis)
+python -m unittest discover tests
 ```
 
 ## 📦 La librairie `rn301/`
@@ -89,12 +92,14 @@ réponses vides/400, retry long (5 s) sur RC=3 ("occupé" après changement de
 source réseau), GET de blocs complets plutôt que de sous-éléments.
 
 ```python
-from rn301 import RN301
-amp = RN301("192.168.1.91")
+from rn301 import RN301, discover_one
+amp = RN301(discover_one()["host"])   # découverte SSDP — ou IP fixe
 
 # --- zone principale
 amp.power_on(); amp.power_off(); amp.toggle_power()
-amp.set_volume(25)          # 0..80 (validé en live)
+amp.set_volume(25)          # échelle protocole 0..100 ; l'ampli clampe à son
+                            # réglage « Max Volume » (80 par défaut en façade).
+                            # RN301(host, max_volume=45) = plafond logiciel
 amp.volume_up(2); amp.volume_down(2)
 amp.set_mute(True); amp.toggle_mute()
 amp.set_input("SERVER")     # 11 entrées: Spotify, NET RADIO, SERVER, AirPlay,
@@ -184,7 +189,7 @@ Le R-N301 expose aussi un **MediaRenderer UPnP** sur `:8080`
 ConnectionManager). Comme l'app officielle avec la musique du téléphone
 (module `localfilecontroller`), on peut lui pousser directement une URL :
 le projet sert le fichier en HTTP (`FileServer`, Range/206) puis envoie
-`SetAVTransportURI`+`Play` en SOAP. **Validé en live : WAV, MP3, FLAC** ✅
+`SetAVTransportURI`+`Play` en SOAP. **Validé en live : WAV, MP3, FLAC, MP4/M4A** ✅
 (pause/reprise OK ; seek refusé par le firmware).
 
 ```python
@@ -193,6 +198,12 @@ push = PushServer("192.168.1.91")
 push.push_file("morceau.flac", title="Mon morceau", artist="Moi")
 push.pause(); push.play(); print(push.state()); push.stop()
 push.push_url("http://nas/radio.mp3")          # webradio/NAS direct
+
+# --- événements de fin de piste (GENA) : la lib notifie, le client décide
+push.on_transport(lambda state, changed: print(state))   # 'PLAYING', 'STOPPED'…
+push.push_file("piste.flac")
+push.wait_stopped(timeout=600)     # bloque sur l'event, zéro polling
+push.close()                       # UNSUBSCRIBE + arrêt du serveur de fichiers
 ```
 
 Dans la webapp : carte **"📲 Push audio"** (upload d'un fichier depuis le
@@ -201,17 +212,27 @@ transport). Options : `--push-port` (9000), `--music` (dossier d'upload),
 `--no-push`. Détails et coulisses du reverse : **`docs/DLNA_PUSH.md`**.
 
 Le renderer honore aussi l'**eventing GENA** (`SUBSCRIBE …/evt` → `SID` +
-`NOTIFY` à chaque changement), validé et **mesuré en live** par
-`tools/probe_gena.py` et `tools/probe_gena_raw.py` — mais **pas encore
-exploité** par la lib ni la webapp (qui pollent). Périmètre réel mesuré :
+`NOTIFY` à chaque changement), mesuré en live puis **implémenté dans la lib** :
+`GenaClient` (`rn301/gena.py` — serveur de callback, renouvellement auto des
+SID, `LastChange` accumulé par deltas, `wait_for`) et les événements de
+`PushServer` (`on_transport`, `wait_stopped`). Périmètre réel mesuré :
 GENA notifie le **volume/mute** (y compris depuis le bouton de façade et la
 télécommande, ~30 ms plus vite que le polling) et le **transport du push DLNA**,
 mais **jamais** `Power`, `Input_Sel`, ni la lecture réseau. Il complète donc le
-polling YNC sans le remplacer. Au passage : l'échelle de volume UPnP est
-**identique** au YNC (80 = 80 au plafond, le `0..100` du SCPD est déclaratif).
-Le contrat complet du service est archivé dans `amp/upnp_avtransport.xml`
-(15 actions, dont `Seek`/`Next`/`Previous` non exploitées, et
-`NumberOfTracks 0..1` → pas de playlist côté ampli).
+polling YNC sans le remplacer (la webapp poll toujours). Au passage : l'échelle
+de volume UPnP est **identique** au YNC (80 = 80 au plafond, le `0..100` du SCPD
+est déclaratif). Le contrat complet du service est archivé dans
+`amp/upnp_avtransport.xml` (15 actions, dont `Seek`/`Next`/`Previous` non
+exploitées, et `NumberOfTracks 0..1` → pas de playlist côté ampli).
+
+```python
+from rn301 import GenaClient
+gena = GenaClient("192.168.1.91")
+gena.subscribe("RenderingControl", lambda svc, changed: print(changed))
+# bouton de façade tourné → {'Volume': {'channel': 'Master', 'val': '52'}}
+gena.var("RenderingControl", "Volume")   # état courant, zéro requête
+gena.close()
+```
 
 ## 🔬 Le reverse engineering (docs/)
 
@@ -236,12 +257,13 @@ découverte complet sans IP fixe : SSDP → `:8080/MediaRenderer/desc.xml` →
 
 - Tag source réseau = **`NET_RADIO`** (pas `Net_Radio` comme ailleurs dans la doc communautaire)
 - `Input_Sel` exige **`TUNER` en majuscules** (`Tuner` → RC=3)
-- **Volume : échelle effective 0..80** sur les **deux** canaux (YNC et UPnP),
-  mesurée en live au plafond — le `allowedValueRange 0..100` du SCPD UPnP est
-  purement **déclaratif** et n'est pas appliqué. Le plafond 80 vient du réglage
-  « Max Volume » de l'ampli (modifiable sur la façade) → `VOL_MAX` est une
-  constante dépendante de la configuration, pas du protocole. Un `PUT` de 100
-  est clampé à 80 par le firmware. Volume relatif `Up x.x dB` refusé →
+- **Volume : échelle protocole 0..100, identique** sur les **deux** canaux (YNC
+  et UPnP) — mesurée en live au plafond (80 = 80). Le plafond effectif vient du
+  réglage « Max Volume » de l'ampli (modifiable sur la façade, aucun chemin YNC
+  de lecture) : un `PUT` de 100 est clampé par le firmware, et le
+  `allowedValueRange 0..100` du SCPD UPnP est purement **déclaratif**. La lib
+  travaille donc sur 0..100 et laisse l'ampli clampler (+ `max_volume=`
+  optionnel, plafond logiciel). Volume relatif `Up x.x dB` refusé →
   lire/calculer/écrire
 - **RC=3 = occupé** : ~3-5 s de digestion après un changement de source réseau,
   retry rapprochés contre-productifs → délai 5 s
@@ -280,17 +302,24 @@ télécommande physique RAX31 émet bien sur 7F.01.
 ## 📁 Arborescence
 
 ```
-├── rn301/               # ⭐ la librairie (rn301.py = client YNC, push.py = push DLNA)
+├── rn301/               # ⭐ la librairie
+│   ├── rn301.py         #   client YNC (~90 ops validées, retries, verrou)
+│   ├── push.py          #   push DLNA (FileServer + SOAP AVTransport + events)
+│   ├── gena.py          #   abonné GENA (GenaClient, wait_for)
+│   ├── discover.py      #   découverte SSDP sans IP fixe
+│   └── _locks.py        #   sérialisation par ampli (1 requête à la fois)
 ├── webapp/              # ⭐ serveur web + page de contrôle + API JSON
+├── tests/               # tests hors-ligne (unittest + faux renderer UPnP)
 ├── docs/
-│   ├── YNC_COMMANDS.md  # référence des commandes validées en live
-│   ├── RESEARCH.md      # journal de reverse engineering
-│   ├── DLNA_PUSH.md     # push audio direct (MediaRenderer :8080, validé live)
+│   ├── YNC_COMMANDS.md  # référence des commandes YNC validées en live
+│   ├── DLNA_PUSH.md     # référence MediaRenderer :8080 (push + GENA)
+│   ├── RESEARCH.md      # journal de reverse engineering (provenance, mesures)
 │   └── ops_brut.txt     # table des ~90 ops YNC extraites de l'APK
 ├── tools/               # scripts d'analyse (androguard, sondage, scan IR,
 │                        #   sondes UPnP read-only : probe_gena*.py)
 └── amp/                 # réponses live archivées (probe_gets.json, scans IR,
-                         #   upnp_desc.xml, upnp_rendering.xml, upnp_avtransport.xml)
+                         #   upnp_desc.xml + les 3 SCPD : avtransport,
+                         #   rendering, connectionmanager)
 ```
 
 Fichiers **non distribués** (propriété Yamaha/tiers, gardés en local,
