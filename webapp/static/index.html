@@ -125,6 +125,7 @@ button:active:not(:disabled){background:var(--active-bg)}
 button.on,button.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
 button.on:hover:not(:disabled),button.primary:hover:not(:disabled){background:var(--primary-shade);border-color:var(--primary-shade)}
 button.on{font-weight:600}
+button:disabled{opacity:.38;cursor:not-allowed}
 input,select{cursor:text}
 select{cursor:pointer}
 :focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px}
@@ -692,6 +693,18 @@ function render(s,ts){
     nc.style.display='';
     playing=pushMode?['PLAYING','TRANSITIONING'].includes(ps.state):(pi.playback||'')==='Play';
     document.getElementById('playIcon').textContent=playing?'pause':'play_arrow';
+    /* Lecture SERVER (DLNA) : le firmware n'honore PAS le Pause — mesuré en live,
+       PUT <SERVER><Play_Control><Playback>Pause</Playback> renvoie RC="0" mais
+       Playback_Info reste 'Play' et Play_Time continue de tourner (le Stop, lui,
+       est honoré ; et Play après Stop ne reprend pas : la file est vidée).
+       L'app Yamaha officielle échoue pareil, même op YNC. On grise donc le bouton
+       au lieu de laisser un contrôle qui ne fait rien.
+       NET RADIO / Spotify / AirPlay : NON testés → on ne change rien pour eux. */
+    const noPause=!pushMode&&inp==='SERVER';
+    const bplay=document.getElementById('btnPlay');
+    bplay.disabled=noPause;
+    const tip=noPause?'Pause non supporté par le firmware en lecture serveur (DLNA) — utiliser Stop':'Lecture / Pause';
+    bplay.title=tip; bplay.setAttribute('aria-label',tip);
     const m=pi.meta||{};
     document.getElementById('npTitle').textContent=m.song||m.station||'—';
     document.getElementById('npSub').textContent=[m.artist,m.album].filter(Boolean).join(' · ');

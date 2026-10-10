@@ -92,6 +92,34 @@ Sleep, Gapless_Playback, Device_Name (System/Config/*), FM_Mode, Search_Mode,
 tuning Up/Down, NET_RADIO Play_Mode (Shuffle/Repeat → passer par Remote_Signal),
 `Tuner/Play_Control/Tuning/Band` en GET, `System/Network/*`, preset `<Val>` wrapper.
 
+## ⚠️ SERVER (DLNA) : `Pause` accepté mais **ignoré** — mesuré en live
+
+Pendant une écoute SERVER (musique en cours, `Play_Time` qui tourne) :
+
+| PUT `<SERVER><Play_Control><Playback>` | RC | `Playback_Info` après | effet |
+|---|---|---|---|
+| `Pause` | **0** | `Play` (inchangé, `Play_Time` 107→115→152) | **aucun** |
+| `Stop` | **0** | `Stop`, `Play_Time=0`, méta vidées | honoré |
+| `Play` (après Stop) | **0** | `Stop` (inchangé) | **aucun** — la file est vidée par Stop, il faut re-sélectionner une ligne (`List_Control/Direct_Sel`) |
+
+Contrôle : `Play` envoyé **pendant** la lecture renvoie aussi `RC="0"` → sur ce
+firmware, `RC="0"` signifie « syntaxe acceptée », pas « ordre exécuté ». Aucune
+erreur n'est donc remontable côté client.
+
+Confirmé dans la même session : l'instance AVTransport UPnP de l'ampli déclare
+`NO_MEDIA_PRESENT` / `rel_time 0:00:00` pendant que `SERVER/Play_Info` dit
+`Play` → les deux piles sont bien étanches (déjà mesuré, cf. RESEARCH.md).
+L'app Yamaha officielle envoie le même op et échoue pareil. Ce n'est donc **pas**
+le serveur DLNA : l'ampli ne change même pas son propre état, il ne lui parle pas.
+
+Conséquence UI : dans la webapp, le bouton lecture/pause est **grisé** en input
+SERVER hors mode push (`title` = « Pause non supporté par le firmware… »). En
+mode push, Pause fonctionne réellement (AVTransport, reprise à la position
+exacte — cf. DLNA_PUSH.md). NET RADIO / Spotify / AirPlay : **non testés**,
+comportement inchangé.
+
+
+
 ## 🔧 Jump_Line / Track_Number : NON supportés (testés en live → 400)
 
 Présents dans k.java/q.java (docs/ops_brut.txt = table des ~90 opérations) mais
