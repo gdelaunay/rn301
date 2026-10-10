@@ -17,9 +17,20 @@ Enveloppe : `<YAMAHA_AV cmd="GET|PUT">…</YAMAHA_AV>` — lecture de valeur : t
    `Spotify`, `AirPlay`, `TUNER` (majuscules — `Tuner` est refusé RC=3), `CD`,
    `OPTICAL`, `COAXIAL`, `LINE1..3`. Tags XML des sources réseau :
    `NET_RADIO` (pas `Net_Radio` !), `SERVER`, `Spotify`, `AirPlay`, `Tuner`.
-6. Pas de desc.xml / UnitDesc.xml / GETDESC sur ce modèle.
-7. **Volume : Val 0..80** (validé en live, 100 clampé à 80). Volume relatif
+6. Pas de **descripteur YNC** sur ce modèle (`/YamahaRemoteControl/desc.xml`
+   → 404, `UnitDesc.xml` vide, pas de `GETDESC`) → les libs YNC génériques
+   (`rxv`, pilotées par `desc.xml`) ne peuvent pas fonctionner. Le
+   `desc.xml` **UPnP** du renderer `:8080` existe (`amp/upnp_desc.xml`) et son
+   bloc vendor `<yamaha:X_device>` donne `X_URLBase` + `X_controlURL
+   /YamahaRemoteControl/ctrl` → découverte SSDP possible sans IP fixe.
+7. **Volume : échelle matérielle 0..100**, plafonnée à **80** par le réglage
+   « Max Volume » de l'ampli (modifiable en façade) — un `PUT` de 100 est
+   clampé à 80 par le firmware. `VOL_MAX` est donc dépendant de la
+   configuration, pas du protocole. Volume relatif
    `Up/Down N.0 dB` **refusé** (RC=3) → lire + calculer + écrire en absolu.
+   Le SCPD RenderingControl (`amp/upnp_rendering.xml`) déclare `Volume` en
+   `ui2` 0..100 avec `SetVolume`/`GetVolume`/`SetMute` → second canal de
+   contrôle, indépendant du YNC.
 8. **Non supportés en YNC** (HTTP 400, validé en live) : `System/Config/Sleep`,
    `Gapless_Playback`, `Device_Name`, `Tuner FM_Mode`, `Search_Mode` (auto-search),
    tuning `Up/Down` (fréquences absolues uniquement), preset avec wrapper `<Val>`
@@ -53,7 +64,7 @@ Play_Info répond même quand la source est inactive (`Feature_Availability: Not
 | Fonction | Requête (dans `<YAMAHA_AV cmd="PUT">`) | Valeurs |
 |---|---|---|
 | Power zone | `<Main_Zone><Power_Control><Power>On</Power>…` | On / Standby |
-| Volume absolu | `<Main_Zone><Volume><Lvl><Val>54</Val><Exp>0</Exp><Unit></Unit></Lvl>…` | Val 0..80 |
+| Volume absolu | `<Main_Zone><Volume><Lvl><Val>54</Val><Exp>0</Exp><Unit></Unit></Lvl>…` | échelle 0..100, plafonnée à 80 par le réglage « Max Volume » de l'ampli |
 | Mute | `<Main_Zone><Volume><Mute>On</Mute>…` | On / Off |
 | Input | `<Main_Zone><Input><Input_Sel>SERVER</Input_Sel>…` | voir liste des 11 inputs |
 | Playback | `<{SRC}><Play_Control><Playback>Play</Playback>…` | Play/Stop/Pause/Skip Fwd/Skip Rev — SRC ∈ NET_RADIO, SERVER, Spotify, AirPlay |

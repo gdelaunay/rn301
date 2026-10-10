@@ -6,6 +6,16 @@ sans app officielle : protocole **YNC** (Yamaha Network Control) reverse-enginee
 
 **100 % Python stdlib** — aucune dépendance.
 
+> **Pourquoi ce repo existe.** Le R-N301 ne sert **aucun descripteur YNC**
+> (`/YamahaRemoteControl/desc.xml` → 404, `UnitDesc.xml` vide) : les librairies
+> YNC génériques, qui découvrent les commandes via ce descripteur, ne peuvent
+> donc **pas** fonctionner avec lui. (Il expose en revanche un `desc.xml` UPnP
+> classique sur `:8080` — `amp/upnp_desc.xml`.) Ce repo est une implémentation complète et sans
+> dépendance obtenue par reverse engineering de l'app officielle *NP Controller
+> 4.60* + validation live commande par commande, et il couvre **les trois
+> canaux de contrôle** de l'appareil : YNC (`:80`), MediaRenderer UPnP
+> (`:8080`) et injection IR `Remote_Signal`.
+
 ```
 ┌────────────────┐                                        ┌─────────────────────┐
 │   Navigateur   │                                        │  Serveur DLNA/UPnP  │
@@ -19,6 +29,47 @@ sans app officielle : protocole **YNC** (Yamaha Network Control) reverse-enginee
 │   server.py    │           │   (librairie)  │   (YNC)    │   192.168.1.91    │
 └────────────────┘           └────────────────┘            └───────────────────┘
 ```
+
+## 🎯 État de l'art — ce que ce projet apporte
+
+Le protocole YNC est déjà bien couvert pour les **amplis AV RX-V** (`rxv`,
+`yamaha-av`, l'intégration Home Assistant `yamaha_ynca`…). Le R-N301, lui,
+restait un angle mort : récepteur stéréo non-MusicCast, sans API officielle
+YXC, sans `desc.xml`. Trois projets le ciblent, tous limités au YNC :
+
+| Projet | Dernière activité | YNC | Push DLNA (`:8080`) | IR `Remote_Signal` |
+|---|---|---|---|---|
+| [`vrih/homeassistant-rn301`](https://github.com/vrih/homeassistant-rn301) | 2019 (abandonné) | ~10 ops | ❌ | ❌ |
+| [`rihokirss/homeasisstant-rn301`](https://github.com/rihokirss/homeasisstant-rn301) (HACS) | actif | SERVER / NET RADIO / TUNER | ❌ | ❌ |
+| [`STYL15HH1/Yamaha-Receiver-Controller`](https://github.com/STYL15HH1/Yamaha-Receiver-Controller) (Android, MIT) | actif, validé sur matériel | navigation + tuner avancés | ❌ | ❌ |
+| **ce repo** | — | **~90 ops** extraites de l'APK, validées en live | ✅ **serveur de fichiers + AVTransport SOAP** | ✅ **device 7F01 scanné intégralement (256 OBC)** |
+
+<sub>À la décharge des projets ci-dessus : `STYL15HH1` connaît le
+MediaRenderer `:8080` mais ne l'utilise que pour la **découverte SSDP**
+(identification modèle/UDN), jamais pour pousser de l'audio — aucun ne fait de
+`SetAVTransportURI`. Même constat côté [`FHEM/71_YAMAHA_NP.pm`](https://github.com/mhop/fhem-mirror/blob/master/fhem/FHEM/71_YAMAHA_NP.pm),
+qui ne lit `/MediaRenderer/desc.xml` que pour les icônes. C'est ce canal-là
+(« l'ampli comme source DLNA de *notre* audio ») qui reste inédit.</sub>
+
+La valeur ajoutée tient donc en trois points :
+
+1. **Le push** — les autres projets *observent* la lecture ; celui-ci *fournit*
+   l'audio à l'ampli (serveur HTTP local + `SetAVTransportURI`). C'est la
+   différence entre une télécommande et une source : TTS/annonces, webradios
+   arbitraires, fichiers poussés depuis un téléphone, tout devient possible.
+2. **La télécommande virtuelle** — les 256 codes du device `7F01` ont été
+   scannés un par un (256/256 acceptés par le firmware), les devices `7A01`
+   (256 codes) et `7A85` (codes du service manual) testés et **écartés**,
+   résultats archivés dans `amp/`. Le scan détecte les effets par *diff d'état
+   YNC*, ce qui identifie les touches réseau (`0x3F` = cycle des sources) mais
+   reste aveugle aux fonctions non exposées en YNC (volume, Speaker A/B,
+   balance) — d'où la liste « reste à capturer » ci-dessous.
+3. **Les deux protocoles ensemble** — YNC pour l'état/la navigation/le tuner,
+   MediaRenderer pour l'audio, avec le savoir de *quand utiliser lequel*.
+
+Voir aussi : [`docs/RESEARCH.md`](docs/RESEARCH.md) (journal de reverse, avec
+provenance et horodatage des validations live),
+[`docs/YNC_COMMANDS.md`](docs/YNC_COMMANDS.md), [`docs/DLNA_PUSH.md`](docs/DLNA_PUSH.md).
 
 ## 🚀 Démarrage rapide
 
@@ -149,10 +200,23 @@ navigateur — y compris depuis un téléphone — ou URL directe, boutons
 transport). Options : `--push-port` (9000), `--music` (dossier d'upload),
 `--no-push`. Détails et coulisses du reverse : **`docs/DLNA_PUSH.md`**.
 
+Le renderer honore aussi l'**eventing GENA** (`SUBSCRIBE /AVTransport/evt` →
+`SID` + `NOTIFY` sur chaque changement de `TransportState`), validé en live par
+`tools/probe_gena.py` mais **pas encore exploité** par la lib ni la webapp (qui
+pollent). C'est la voie pour attendre une fin de piste sans interroger l'ampli.
+Le contrat complet du service est archivé dans `amp/upnp_avtransport.xml`
+(15 actions, dont `Seek`/`Next`/`Previous` non exploitées, et
+`NumberOfTracks 0..1` → pas de playlist côté ampli).
+
 ## 🔬 Le reverse engineering (docs/)
 
-Le R-N301 n'expose **aucun desc.xml** : l'app officielle code les commandes en
-dur par modèle. Méthode employée :
+Le R-N301 n'expose **aucun descripteur YNC** (`/YamahaRemoteControl/desc.xml`
+→ 404, `UnitDesc.xml` vide) : l'app officielle code les commandes en dur par
+modèle. (Le `desc.xml` **UPnP** du renderer `:8080`, lui, existe bien et a été
+archivé dans `amp/upnp_desc.xml` — il contient même un bloc vendor
+`<yamaha:X_device>` qui pointe vers l'endpoint YNC, d'où un chemin de
+découverte complet sans IP fixe : SSDP → `:8080/MediaRenderer/desc.xml` →
+`X_URLBase` + `X_controlURL`.) Méthode employée :
 
 1. **Décompilation de l'APK** NP Controller v4.60 (androguard) →
    `q.java` = builder YNC du R-N301, ~90 opérations (`docs/ops_brut.txt`)
@@ -167,7 +231,11 @@ dur par modèle. Méthode employée :
 
 - Tag source réseau = **`NET_RADIO`** (pas `Net_Radio` comme ailleurs dans la doc communautaire)
 - `Input_Sel` exige **`TUNER` en majuscules** (`Tuner` → RC=3)
-- **Volume max = 80**, volume relatif `Up x.x dB` refusé → lire/calculer/écrire
+- **Volume : échelle 0..100**, mais plafonnée à **80** par le réglage
+  « Max Volume » de l'ampli (modifiable sur la façade) → `VOL_MAX` est une
+  constante dépendante de la configuration, pas du protocole. Un `PUT` de 100
+  est clampé à 80 par le firmware. Volume relatif `Up x.x dB` refusé →
+  lire/calculer/écrire
 - **RC=3 = occupé** : ~3-5 s de digestion après un changement de source réseau,
   retry rapprochés contre-productifs → délai 5 s
 - Tuner : chemin `Tuning/Freq/{FM,AM}`, pas d'auto-search YNC, presets sans `<Val>`
@@ -186,11 +254,21 @@ dur par modèle. Méthode employée :
 </Receive></Remote_Signal></Misc></System></YAMAHA_AV>
 ```
 
-Seul le device **7F01** est décodé. Codes connus : `0x46` Shuffle, `0x45` Repeat
-(utilisés par l'app officielle), `0x3A`/`0x3F` sources réseau.
+Seul le device **7F01** produit des effets. Codes connus : `0x46` Shuffle,
+`0x45` Repeat (utilisés par l'app officielle), `0x3A`/`0x3F` sources réseau.
+Le firmware accepte **n'importe quel** code `7F01+OBC+~OBC` sans le valider
+(256/256 au scan) : `Remote_Signal` est un simple *blaster* IR, la détection
+d'un effet ne peut donc passer que par l'observation de l'état.
 **Reste à capturer** : les codes de la télécommande RAX31 (volume, power,
 Speaker A/B, Balance...) via récepteur IR — si leur device ≠ 7F01, il faudra un
 émetteur IR physique (ESP32 + LED) pointé sur la façade.
+Le code est un **NEC1 étendu** : `7F` = device 127, `01` = **vrai sub-device**
+(127 + 1 ≠ 255, ce n'est donc pas un complément), `B9` = OBC, `46` = ~OBC.
+C'est ce qui explique l'échec des scans sur `7A01`/`7A85` : mauvais device.
+Piste pour **nommer** les 256 codes déjà scannés sans nouvelle capture : la doc
+Yamaha « Remote Control Code » liste les codes au format `device-OBC` (ex.
+`7A-5C23`) — reste à vérifier si une section `7F-` y couvre le R-N301, et si la
+télécommande physique RAX31 émet bien sur 7F.01.
 
 ## 📁 Arborescence
 
@@ -202,8 +280,10 @@ Speaker A/B, Balance...) via récepteur IR — si leur device ≠ 7F01, il faudr
 │   ├── RESEARCH.md      # journal de reverse engineering
 │   ├── DLNA_PUSH.md     # push audio direct (MediaRenderer :8080, validé live)
 │   └── ops_brut.txt     # table des ~90 ops YNC extraites de l'APK
-├── tools/               # scripts d'analyse (androguard, sondage, scan IR)
-└── amp/                 # réponses live archivées (probe_gets.json, scans IR)
+├── tools/               # scripts d'analyse (androguard, sondage, scan IR,
+│                        #   sonde UPnP read-only : probe_gena.py)
+└── amp/                 # réponses live archivées (probe_gets.json, scans IR,
+                         #   upnp_desc.xml, upnp_rendering.xml, upnp_avtransport.xml)
 ```
 
 Fichiers **non distribués** (propriété Yamaha/tiers, gardés en local,

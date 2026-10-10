@@ -15,7 +15,10 @@ import xml.etree.ElementTree as ET
 DEFAULT_HOST = "192.168.1.91"
 CTRL_PATH = "/YamahaRemoteControl/ctrl"
 
-# Volume R-N301 : Val 0..80 (validé en live : 100 est clampé à 80).
+# Volume R-N301 : échelle matérielle 0..100, plafonnée à 80 par le réglage
+# « Max Volume » de l'ampli (modifiable en façade) — un PUT de 100 est clampé à 80
+# par le firmware. VOL_MAX reflète donc la config de CET appareil, pas le protocole.
+# Voir ROADMAP.md §1.3 (lire le Max Volume au lieu de le coder en dur).
 VOL_MIN, VOL_MAX, VOL_STEP = 0, 80, 1
 
 # Source (telle qu'affichée par Input_Sel) -> tag XML YNC.
