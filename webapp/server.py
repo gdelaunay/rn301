@@ -115,6 +115,29 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj, ensure_ascii=False).encode(), "application/json; charset=utf-8")
 
+    _ASSET_TYPES = {".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf",
+                    ".otf": "font/otf", ".css": "text/css; charset=utf-8",
+                    ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml",
+                    ".png": "image/png", ".json": "application/json"}
+
+    def serve_asset(self, rel: str):
+        """Sert un fichier statique de webapp/static/assets/ (fonts, etc.).
+        basename() = anti path-traversal ; extension en liste blanche ; cache long
+        (fichiers immuables, l'UI ne change de toute façon pas de nom)."""
+        name = os.path.basename(rel)
+        ctype = self._ASSET_TYPES.get(os.path.splitext(name)[1].lower())
+        fp = os.path.join(_STATIC_DIR, "assets", name)
+        if not ctype or not os.path.isfile(fp):
+            return self._json({"error": "not found"}, 404)
+        with open(fp, "rb") as f:
+            data = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _body(self) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
         if not n:
@@ -177,8 +200,29 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             self._send(200, INDEX_HTML.encode(), "text/html; charset=utf-8")
+        elif path.startswith("/assets/"):
+            self.serve_asset(path[len("/assets/"):])
         elif path == "/api/state":
             self._json({"state": self.full_state()})
+        elif path == "/api/basic":
+            # Amorçage UI : l'état minimal en 1 à 2 GET YNC (basic_status +
+            # liste des sources, mise en cache) au lieu des 6-8 GET séquentiels
+            # de /api/state → power/volume/mute/sources affichés en ~200 ms.
+            # Les cartes riches (now playing, tuner, liste, push) attendent
+            # /api/state : elles dépendent de play_info/list_info.
+            try:
+                st = amp.basic_status()
+            except YNCError as e:
+                self._json({"error": str(e)}, 502)
+                return
+            if not getattr(amp, "_inputs_cache", None):
+                try:
+                    amp._inputs_cache = amp.list_inputs()
+                except YNCError:
+                    amp._inputs_cache = []
+            st["inputs"] = amp._inputs_cache
+            st["partial"] = True
+            self._json({"state": st})
         elif path == "/api/events":
             self.sse_stream()
         elif path == "/api/inputs":

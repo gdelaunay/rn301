@@ -110,7 +110,7 @@ a{color:var(--link)}
 
 /* row */
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.row+.row{margin-top:8px}
+.row+.row, .now+.row, .list+.row, .row+.list, .now{margin-top:8px}
 .spacer{flex:1}
 
 /* controls */
@@ -142,10 +142,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;heigh
   border-radius:50%;background:var(--primary);border:2px solid var(--bg-surface)}
 input[type=range]::-moz-range-thumb{width:14px;height:14px;border:2px solid var(--bg-surface);
   border-radius:50%;background:var(--primary)}
-.volval{min-width:52px;text-align:center;font:600 13px/1 var(--font-mono);font-variant-numeric:tabular-nums}
+/* .volval : lecture seule — style « puits » (voir plus bas, bloc redesign) */
 
-/* sources */
-.src{flex:1 1 30%;text-align:center;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* sources : voir le bloc redesign plus bas (hauteur auto obligatoire, sinon le
+   libellé sous l'icône est rogné par height:var(--control-h) + overflow:hidden) */
 
 /* chips / badges */
 .chip{display:inline-block;padding:1px 7px;border:var(--hairline) solid currentColor;
@@ -189,6 +189,40 @@ details[open] summary{margin-bottom:12px}
 .theme-toggle[data-mode=light] .i-light,
 .theme-toggle[data-mode=dark] .i-dark{display:block}
 
+/* ===== Icônes Material Symbols Outlined — self-hosted (poids 400, grille opsz24),
+   licence Apache 2.0 (voir assets/LICENSE-material-symbols.txt). Une icône = une
+   LIGATURE : le texte de l'élément est le NOM de l'icône. Net à toute taille (vectoriel). */
+@font-face{font-family:'Material Symbols Outlined';font-style:normal;font-weight:400;
+  src:url('assets/material-symbols-outlined.woff2') format('woff2');font-display:swap}
+.msi{font-family:'Material Symbols Outlined';font-weight:400;font-style:normal;line-height:1;
+  letter-spacing:normal;text-transform:none;white-space:nowrap;display:inline-block;
+  vertical-align:middle;font-size:20px;-webkit-font-feature-settings:'liga';font-feature-settings:'liga';user-select:none}
+button{display:inline-flex;align-items:center;justify-content:center}
+button .msi{font-size:22px}
+button.pwr .msi,#btnPlay .msi{font-size:26px}
+/* sources : icône au-dessus, libellé dessous (pile/tag).
+   height:auto est INDISPENSABLE : la règle globale des boutons impose
+   height:var(--control-h) (36px) et .src a overflow:hidden → sans ça, l'icône
+   (24px) + gap + texte ne rentrent pas et le libellé est rogné (invisible). */
+.src{flex:1 1 30%;height:auto;min-width:0;display:flex;flex-direction:column;
+  align-items:center;gap:6px;padding:9px 6px;overflow:hidden;text-align:center}
+.src .msi{font-size:24px;margin:0;line-height:1}
+.src .lb{display:block;width:100%;font-size:.72rem;line-height:1.25;letter-spacing:.02em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* lecture du volume : champ en lecture seule, centré sur la ligne Power/Mute.
+   Volontairement PAS un bouton : fond renfoncé (--bg-deep), ombre interne,
+   encre atténuée, curseur par défaut, aucun état hover/active/focus. */
+.volval{display:inline-flex;align-items:center;justify-content:center;
+  height:var(--control-h);min-width:64px;padding:0 10px;
+  border:var(--hairline) solid var(--border);border-radius:var(--radius);
+  background:var(--bg-deep);box-shadow:inset 0 1px 2px rgb(0 0 0 / .10);
+  font:600 1.05rem/1 var(--font-mono);font-variant-numeric:tabular-nums;
+  letter-spacing:.01em;color:var(--ink-muted);cursor:default;user-select:none}
+/* boutons à icône seule : plus d'air + cible carrée ; Power/Play un peu plus grands */
+button:has(> .msi):not(.src){min-width:var(--control-h);padding-inline:14px}
+button.pwr,#btnPlay{height:40px;min-width:46px}
+#btnPower { padding-inline: 12px;}
+
 @media (max-width:560px){.src{flex-basis:44%}}
 </style>
 </head>
@@ -209,15 +243,16 @@ details[open] summary{margin-bottom:12px}
 
   <div class="card">
     <div class="row">
-      <button class="pwr" id="btnPower" onclick="api('power',{},true)">Power</button>
+      <button class="pwr" id="btnPower" onclick="api('power',{},true)" aria-label="Power" title="Power"><i class="msi">power_settings_new</i></button>
       <div class="spacer"></div>
-      <button id="btnMute" onclick="api('mute',{},true)">Mute</button>
+      <span class="volval" id="volval" title="Volume" aria-hidden="true">--</span>
+      <div class="spacer"></div>
+      <button id="btnMute" onclick="api('mute',{},true)" aria-label="Mute" title="Mute"><i class="msi">volume_off</i></button>
     </div>
-    <div class="row" style="margin-top:12px">
-      <button aria-label="Volume moins" oncontextmenu="return false" onpointerdown="holdStart(-1)" onpointerup="holdEnd()" onpointerleave="holdEnd()" onpointercancel="holdEnd()" onclick="if(event.detail===0)tapVol(-1)">−</button>
-      <input type="range" id="vol" min="0" max="100" step="1" oninput="volInput(+this.value)" onchange="volEnd()" aria-label="Volume">
-      <button aria-label="Volume plus" oncontextmenu="return false" onpointerdown="holdStart(1)" onpointerup="holdEnd()" onpointerleave="holdEnd()" onpointercancel="holdEnd()" onclick="if(event.detail===0)tapVol(1)">+</button>
-      <span class="volval" id="volval">--</span>
+    <div class="row">
+      <button aria-label="Volume moins" title="Volume moins" oncontextmenu="return false" onpointerdown="holdStart(-1)" onpointerup="holdEnd()" onpointerleave="holdEnd()" onpointercancel="holdEnd()" onclick="if(event.detail===0)tapVol(-1)"><i class="msi">remove</i></button>
+      <input type="range" id="vol" min="0" max="100" step="1" oninput="volInput(+this.value)" onchange="volEnd()" aria-label="Volume" title="Volume">
+      <button aria-label="Volume plus" title="Volume plus" oncontextmenu="return false" onpointerdown="holdStart(1)" onpointerup="holdEnd()" onpointerleave="holdEnd()" onpointercancel="holdEnd()" onclick="if(event.detail===0)tapVol(1)"><i class="msi">add</i></button>
     </div>
   </div>
 
@@ -238,14 +273,14 @@ details[open] summary{margin-bottom:12px}
         <div class="s" id="npSub"></div>
       </div>
     </div>
-    <div class="row" style="margin-top:12px">
-      <button id="btnPrev" onclick="api('playback',{action:'Skip Rev'})">Prev</button>
-      <button class="primary" id="btnPlay" onclick="playBtn()">Play</button>
-      <button id="btnNext" onclick="api('playback',{action:'Skip Fwd'})">Next</button>
-      <button onclick="pushMode?api('pushctl',{action:'Stop'}):api('playback',{action:'Stop'})">Stop</button>
+    <div class="row">
+      <button id="btnPrev" aria-label="Précédent" title="Précédent" onclick="api('playback',{action:'Skip Rev'})"><i class="msi">skip_previous</i></button>
+      <button class="primary" id="btnPlay" aria-label="Lecture / Pause" title="Lecture / Pause" onclick="playBtn()"><i class="msi" id="playIcon">play_arrow</i></button>
+      <button id="btnNext" aria-label="Suivant" title="Suivant" onclick="api('playback',{action:'Skip Fwd'})"><i class="msi">skip_next</i></button>
+      <button aria-label="Stop" title="Stop" onclick="pushMode?api('pushctl',{action:'Stop'}):api('playback',{action:'Stop'})"><i class="msi">stop</i></button>
       <div class="spacer"></div>
-      <button id="btnShuffle" onclick="api('playmode',{what:'shuffle',value:shuffleNext()})">Shuffle</button>
-      <button id="btnRepeat" onclick="api('playmode',{what:'repeat',value:repeatNext()})">Repeat</button>
+      <button id="btnShuffle" aria-label="Aléatoire" title="Aléatoire" onclick="api('playmode',{what:'shuffle',value:shuffleNext()})"><i class="msi">shuffle</i></button>
+      <button id="btnRepeat" aria-label="Répéter" title="Répéter" onclick="api('playmode',{what:'repeat',value:repeatNext()})"><i class="msi" id="repeatIcon">repeat</i></button>
     </div>
   </div>
 
@@ -255,12 +290,12 @@ details[open] summary{margin-bottom:12px}
       <span class="chip" id="tunerinfo"></span>
     </div>
     <div class="row">
-      <button onclick="api('tuner',{op:'step',band:band,dir:'Down'})">◀</button>
+      <button aria-label="Descendre" title="Descendre" onclick="api('tuner',{op:'step',band:band,dir:'Down'})"><i class="msi">caret_left</i></button>
       <select id="bandsel" onchange="band=this.value;refresh()"><option>FM</option><option>AM</option></select>
-      <button onclick="api('tuner',{op:'step',band:band,dir:'Up'})">▶</button>
-      <button onclick="api('tuner',{op:'search',band:band,dir:'Up'})">Auto</button>
-      <input type="number" id="freq" step="0.1" style="width:88px">
-      <button onclick="api('tuner',{op:'tune',band:band,freq:document.getElementById('freq').value})">Go</button>
+      <button aria-label="Monter" title="Monter" onclick="api('tuner',{op:'step',band:band,dir:'Up'})"><i class="msi">caret_right</i></button>
+      <button aria-label="Recherche auto" title="Recherche auto" onclick="api('tuner',{op:'search',band:band,dir:'Up'})"><i class="msi">search</i></button>
+      <input type="number" id="freq" step="0.1" style="width:88px" aria-label="Fréquence" title="Fréquence">
+      <button aria-label="Accorder" title="Accorder" onclick="api('tuner',{op:'tune',band:band,freq:document.getElementById('freq').value})"><i class="msi">tune</i></button>
     </div>
     <div class="row" id="presets"></div>
   </div>
@@ -271,11 +306,11 @@ details[open] summary{margin-bottom:12px}
       <span class="chip" id="menuname"></span>
     </div>
     <div class="list" id="menu"></div>
-    <div class="row" style="margin-top:12px">
-      <button onclick="api('cursor',{dir:'Return'})">Back</button>
-      <button onclick="api('cursor',{dir:'Up'})">Up</button>
-      <button onclick="api('cursor',{dir:'Down'})">Down</button>
-      <button onclick="api('cursor',{dir:'Sel'})">OK</button>
+    <div class="row">
+      <button aria-label="Retour" title="Retour" onclick="api('cursor',{dir:'Return'})"><i class="msi">arrow_back</i></button>
+      <button aria-label="Monter" title="Monter" onclick="api('cursor',{dir:'Up'})"><i class="msi">arrow_upward</i></button>
+      <button aria-label="Descendre" title="Descendre" onclick="api('cursor',{dir:'Down'})"><i class="msi">arrow_downward</i></button>
+      <button aria-label="Sélectionner" title="Sélectionner" onclick="api('cursor',{dir:'Sel'})"><i class="msi">check</i></button>
     </div>
   </div>
 
@@ -286,11 +321,11 @@ details[open] summary{margin-bottom:12px}
     </div>
     <div class="row">
       <input type="file" id="pushfile" accept="audio/*" style="flex:1;min-width:0">
-      <button onclick="pushFile()">Push</button>
+      <button aria-label="Envoyer le fichier" title="Envoyer le fichier" onclick="pushFile()"><i class="msi">cloud_upload</i></button>
     </div>
     <div class="row">
       <input type="url" id="pushurl" placeholder="http://… (webradio MP3, NAS…)">
-      <button onclick="api('push',{url:document.getElementById('pushurl').value})">Go</button>
+      <button aria-label="Lire l'URL" title="Lire l'URL" onclick="api('push',{url:document.getElementById('pushurl').value})"><i class="msi">play_arrow</i></button>
     </div>
   </div>
 
@@ -317,6 +352,18 @@ details[open] summary{margin-bottom:12px}
 
 <script>
 let state={}, band='FM', shuffle=false, repeat='Off', playing=false, pushMode=false;
+/* Mapping source (Input_Sel / liste des entrées) -> nom d'icône Material Symbols.
+   Clés en MAJUSCULES ; srcIcon normalise. Repli 'input' si source inconnue. */
+const SRC_ICON={'SPOTIFY':'graphic_eq','NET RADIO':'podcasts','SERVER':'library_music','AIRPLAY':'cast','TUNER':'radio','CD':'album','OPTICAL':'sensors','COAXIAL':'cable','LINE1':'settings_input_component','LINE2':'settings_input_component','LINE3':'settings_input_component','PUSH':'cloud_upload'};
+function srcIcon(v){return SRC_ICON[((v||'').trim().toUpperCase())]||'input';}
+/* Ordre d'affichage des sources : celui de l'app Yamaha native (lue de droite à
+   gauche, de haut en bas). L'ampli les renvoie dans son propre ordre (Spotify,
+   NET RADIO, SERVER, AirPlay, TUNER, CD, …) → on réindexe côté UI, sans toucher
+   au serveur. Une source inconnue passe après les connues, tri stable. PUSH
+   (pseudo-source locale) reste toujours dernier. */
+const SRC_ORDER=['TUNER','CD','OPTICAL','COAXIAL','LINE1','LINE2','LINE3','SPOTIFY','SERVER','NET RADIO','AIRPLAY'];
+function srcRank(v){const i=SRC_ORDER.indexOf((v||'').trim().toUpperCase());return i<0?SRC_ORDER.length:i;}
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 
 function enterPush(){pushMode=true;api('input',{val:'SERVER'});}
 function exitPush(v){pushMode=false;api('input',{val:v});}
@@ -358,7 +405,15 @@ function clampVol(v){return Math.max(0,Math.min(100,Math.round(v)));}
 let paintedVol=null;
 function paintVol(v){const el=$('vol');
   if(v!==paintedVol){paintedVol=v;el.value=v;el.style.setProperty('--fill',v+'%');}  // pas de repaint redondant
-  $('volval').textContent=(state.power==='On')?v:'--';}
+  paintVolLabel();}
+/* Le libellé dépend de state.power (— en veille) ET de la valeur courante : il
+   est rafraîchi à part, car un échantillon volume peut être rejeté (périmé)
+   alors que l'état power, lui, vient d'arriver. Sans ça, un écho SSE reçu avant
+   le 1er render() laissait « -- » collé jusqu'au poll suivant. */
+function paintVolLabel(){
+  const v=owning()?localVol:devVol;
+  $('volval').textContent=(state.power==='On'&&v!=null)?v:'--';
+}
 function paintMute(m){$('btnMute').classList.toggle('on',m==='On');}
 function owning(){return Date.now()<gestureUntil;}
 function shownVol(){return (owning()||devVol==null)?localVol:devVol;}
@@ -461,6 +516,20 @@ async function pushFile(){
   }catch(e){toast('Erreur : '+e.message);}
 }
 
+/* Amorçage : /api/basic = 1 à 2 GET YNC (basic_status + sources cachées) au
+   lieu des 6-8 GET séquentiels de /api/state. Lancé EN PARALLÈLE du premier
+   refresh() (la lib sérialise les accès via amp_lock) → power, volume, mute et
+   sources sont à l'écran en ~200 ms au lieu de 2-3 s. Les cartes riches (now
+   playing, tuner, liste, push) restent masquées jusqu'à l'état complet : elles
+   dépendent de play_info/list_info que basic_status ne renvoie pas. */
+async function bootstrap(){
+  const sent=Date.now();
+  try{
+    const r=await fetch('/api/basic'); const j=await r.json();
+    if(j.state) render(j.state,sent);
+  }catch(_){/* le refresh() complet arrive derrière */}
+}
+
 async function refresh(){
   const sent=Date.now();          // fraîcheur conservative : ce snapshot date d'ICI
   try{
@@ -469,43 +538,57 @@ async function refresh(){
   }catch(e){document.getElementById('sysinfo').textContent='ampli injoignable';}
 }
 
+/* Boutons de source (+ pseudo-source PUSH en dernier). Extrait de render() pour
+   que bootstrap() puisse les construire depuis un état partiel (basic_status
+   renvoie déjà Input_Sel, et /api/basic ajoute la liste des sources). */
+function renderSources(s){
+  const sc=document.getElementById('sources');
+  if(!sc.children.length && s.inputs){
+    [...s.inputs].sort((a,b)=>srcRank(a.value)-srcRank(b.value)).forEach(i=>{
+      const b=document.createElement('button'); b.className='src'; b.dataset.val=i.value;
+      b.innerHTML='<i class="msi">'+srcIcon(i.value)+'</i><span class="lb">'+esc(i.value)+'</span>'; b.title=i.value;
+      b.onclick=()=>{pushMode=false;api('input',{val:i.value});}; sc.appendChild(b);
+    });
+    const bp=document.createElement('button'); bp.className='src'; bp.id='srcPush';
+    bp.innerHTML='<i class="msi">cloud_upload</i><span class="lb">PUSH</span>'; bp.title='PUSH — mode appareil (fichier ou URL)';
+    bp.onclick=()=>enterPush(); sc.appendChild(bp);
+  }
+  [...sc.children].forEach(b=>{
+    if(b.id==='srcPush') b.classList.toggle('on',pushMode);
+    else b.classList.toggle('on',!pushMode&&b.dataset.val===s.input);
+  });
+}
+
 function render(s,ts){
+  // un état partiel (amorçage) ne doit jamais écraser un état complet déjà reçu
+  if(s.partial&&state&&!state.partial&&state.power)return;
   state=s;
   // volume/mute passent par noteDevice (ts) : un snapshot plus vieux qu'un
   // écho SSE déjà reçu est ignoré → plus d'écrasement anti-flicker à la genaVol.
   noteDevice(s.volume,s.mute,ts);
+  paintVolLabel();                       // power vient d'arriver : le libellé suit
   const on=s.power==='On';
-  document.getElementById('sysinfo').textContent=`${s.model||'R-N301'} · v${s.version||'?'} · ${on?'allumé':'veille'}${genaLive?' · GENA':''}`;
+  document.getElementById('sysinfo').textContent=`${s.model||'R-N301'}${s.version?' · v'+s.version:''} · ${on?'allumé':'veille'}${genaLive?' · GENA':''}`;
   const bp=document.getElementById('btnPower'); bp.classList.toggle('on',on);
+
+  // amorçage : on s'arrête aux sources (les cartes riches sont display:none)
+  if(s.partial){renderSources(s);return;}
 
   // sources (+ pseudo-source PUSH en dernier)
   const ps=s.push_state||{};
   if(['PLAYING','TRANSITIONING','PAUSED_PLAYBACK'].includes(ps.state)) pushMode=true;
   if(s.input!=='SERVER') pushMode=false;
-  const sc=document.getElementById('sources');
-  if(!sc.children.length && s.inputs){
-    s.inputs.forEach(i=>{
-      const b=document.createElement('button'); b.className='src'; b.textContent=i.value;
-      b.onclick=()=>{pushMode=false;api('input',{val:i.value});}; sc.appendChild(b);
-    });
-    const bp=document.createElement('button'); bp.className='src'; bp.id='srcPush';
-    bp.textContent='PUSH';
-    bp.onclick=()=>enterPush(); sc.appendChild(bp);
-  }
-  [...sc.children].forEach(b=>{
-    if(b.id==='srcPush') b.classList.toggle('on',pushMode);
-    else b.classList.toggle('on',!pushMode&&b.textContent===s.input);
-  });
+  renderSources(s);
 
   // now playing (sources réseau)
   const inp=(s.input||'').toUpperCase();
   const net=['NET RADIO','SERVER','SPOTIFY','AIRPLAY'].includes(inp);
   const pi=s.play_info||{};
   const nc=document.getElementById('nowcard');
-  if(on&&net&&pi.available!=='Not Ready'){
+  if(on&&net&&pi.available!=='Not Ready'&&(pi.meta||pi.playback)){
     nc.style.display='';
     playing=pushMode?['PLAYING','TRANSITIONING'].includes(ps.state):(pi.playback||'')==='Play';
-    document.getElementById('btnPlay').textContent=playing?'Pause':'Play';
+    document.getElementById('playIcon').textContent=playing?'pause':'play_arrow';
     const m=pi.meta||{};
     document.getElementById('npTitle').textContent=m.song||m.station||'—';
     document.getElementById('npSub').textContent=[m.artist,m.album].filter(Boolean).join(' · ');
@@ -514,7 +597,7 @@ function render(s,ts){
     if(pi.album_art){art.src='/art?url='+encodeURIComponent(pi.album_art);art.style.display='';}
     else art.style.display='none';
     if(pi.shuffle!==undefined){shuffle=pi.shuffle==='On';document.getElementById('btnShuffle').classList.toggle('on',shuffle);}
-    if(pi.repeat!==undefined){repeat=pi.repeat;document.getElementById('btnRepeat').classList.toggle('on',repeat!=='Off');document.getElementById('btnRepeat').textContent=repeat==='One'?'Repeat 1':'Repeat';}
+    if(pi.repeat!==undefined){repeat=pi.repeat;document.getElementById('btnRepeat').classList.toggle('on',repeat!=='Off');document.getElementById('repeatIcon').textContent=repeat==='One'?'repeat_one':'repeat';}
   } else nc.style.display='none';
 
   // en mode push : transport simplifié (ni prev/next, ni shuffle/repeat — sans objet)
@@ -530,7 +613,7 @@ function render(s,ts){
     document.getElementById('tunerinfo').textContent=
       `${pi.band||'?'} ${f?(u==='MHz'?(f/100).toFixed(2)+' MHz':f+' kHz'):''} ${pi.tuned==='Positive'?'· accordé':''} ${pi.stereo==='Positive'?'· stéréo':''}`;
     band=pi.band||'FM'; document.getElementById('bandsel').value=band;
-    document.getElementById('freq').value=band==='FM'?(f/100).toFixed(2):f;
+    if(f!=null)document.getElementById('freq').value=band==='FM'?(f/100).toFixed(2):f;
     const ps2=document.getElementById('presets');
     if(!ps2.children.length){for(let n=1;n<=8;n++){const b=document.createElement('button');b.textContent=n;b.onclick=()=>api('tuner',{op:'preset',n});ps2.appendChild(b);}}
   } else tc.style.display='none';
@@ -562,7 +645,7 @@ function render(s,ts){
   if(s.net_name)document.getElementById('netname').textContent=s.net_name;
 }
 
-refresh(); setInterval(refresh,4000);
+bootstrap(); refresh(); setInterval(refresh,4000);
 
 // volume/mute en push instantané (GENA → SSE) — canal ordonné, ts = réception
 let genaLive=false;                 // sert uniquement au badge « GENA » de sysinfo

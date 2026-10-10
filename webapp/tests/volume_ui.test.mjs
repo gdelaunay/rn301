@@ -31,6 +31,7 @@ const PRELUDE = `
 var PAINTS = [];      // [{v, at}] — chaque écriture du slider
 var SENT = [];        // [{val, at}] — chaque POST /api/volume
 var MUTES = [];       // états peints du bouton mute
+var LABEL = [];       // valeurs successives du libellé #volval
 var NOW = ${T0};
 var api = null;       // stub fourni par le test
 var state = { power: 'On', volume: 40, mute: 'Off' };
@@ -47,6 +48,14 @@ function __mkEl(id) {
       set value(x) { v = x; PAINTS.push({ v: x, at: NOW }); },
       style: { setProperty: function () {} },
       textContent: ''
+    };
+  }
+  if (id === 'volval') {
+    var t = '';
+    return {
+      get textContent() { return t; },
+      set textContent(x) { t = x; LABEL.push(String(x)); },
+      style: { setProperty: function () {} }, classList: { toggle: function () {} }
     };
   }
   return {
@@ -80,8 +89,9 @@ function tick(ms) {
   }
   NOW = end; __drain();
 }
-/* render() minimal : remplace l'état puis injecte volume/mute comme le fait la page */
-function render(s, ts) { state = s; noteDevice(s.volume, s.mute, ts); }
+/* render() minimal : même contrat que la page (état remplacé, volume/mute
+   injectés avec leur ts, libellé rafraîchi car il dépend aussi de power) */
+function render(s, ts) { state = s; noteDevice(s.volume, s.mute, ts); paintVolLabel(); }
 `;
 
 function makeWorld(opts = {}) {
@@ -130,6 +140,7 @@ function makeWorld(opts = {}) {
   // [...] : recopie dans le realm hôte (sinon assert.deepEqual compare les prototypes)
   sandbox.applied = () => [...applied];
   sandbox.paints = () => [...sandbox.PAINTS].map(p => p.v);
+  sandbox.labels = () => [...sandbox.LABEL];
   sandbox.sentVals = () => [...sandbox.SENT].map(s => s.val);
   return sandbox;
 }
@@ -283,6 +294,20 @@ test('mute : peint depuis le device, ignoré si l\'échantillon est périmé', (
   assert.equal(w.MUTES.at(-1).on, true, 'échantillon vieux ignoré');
   w.noteDevice(40, 'Off', t + 100); w.tick(1);
   assert.equal(w.MUTES.at(-1).on, false);
+});
+
+test('ouverture de page : écho SSE reçu AVANT l\'état → pas de « -- » collé', () => {
+  const w = makeWorld({ noGena: true, devVol: 42 });
+  w.state = {};                                 // power encore inconnu au 1er écho
+  w.noteDevice(42, undefined, w.NOW);           // seed SSE à la connexion
+  w.tick(1);
+  assert.equal(w.labels().at(-1), '--', 'power inconnu → --');
+  // le poll a été ENVOYÉ avant le seed : son échantillon volume est périmé, mais
+  // il apporte power → le libellé doit basculer sur la valeur sans attendre 4 s.
+  w.render({ power: 'On', volume: 40, mute: 'Off' }, w.NOW - 5);
+  w.tick(1);
+  assert.equal(w.labels().at(-1), '42', `libellé renseigné tout de suite : ${w.labels()}`);
+  assert.equal(w.paints().at(-1), 42, 'la valeur SSE plus fraîche est conservée');
 });
 
 test('pas de peinture parasite : rien ne bouge sans évènement', () => {

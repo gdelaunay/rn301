@@ -181,6 +181,7 @@ touches IR.
 | Route | Body | Action |
 |---|---|---|
 | `/api/state` (GET) | — | état agrégé (zone + play_info + list_info + réseau) |
+| `/api/basic` (GET) | — | amorçage UI : `basic_status` + liste des sources en 1–2 GET YNC (au lieu de 6–8), `state.partial=true` — power/volume/mute/sources affichés en ~200 ms à l'ouverture de la page |
 | `/api/power` | `{on:bool}` ou `{}` | set / toggle |
 | `/api/volume` | `{val:0..100}` ou `{delta:±n}` | absolu / relatif — renvoie `{ok, volume, mute}` : ack **léger** (1 seul GET YNC, relu après le set) au lieu de l'état agrégé, pour que le slider se cale vite et sans marteler l'ampli |
 | `/api/mute` | `{on:bool}` ou `{}` | set / toggle |
