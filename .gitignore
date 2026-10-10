@@ -16,3 +16,8 @@ music/
 
 # Roadmap / notes de travail privées
 ROADMAP.md
+
+# Artefacts de packaging
+build/
+*.egg-info/
+dist/

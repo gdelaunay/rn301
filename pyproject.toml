@@ -9,7 +9,7 @@ description = "Contrôle complet de l'ampli hi-fi Yamaha R-N301 : protocole YNC,
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Goulwen Delaunay", email = "goulwendelaunay@gmail.com" }]
+authors = [{ name = "gdelaunay", email = "admin@gdelaunay.fr" }]
 keywords = ["yamaha", "r-n301", "ync", "upnp", "dlna", "gena", "ssdp", "hifi", "remote-control"]
 classifiers = [
     "Development Status :: 4 - Beta",

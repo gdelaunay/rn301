@@ -1,4 +1,7 @@
-# 🎛️ rn301 — Yamaha R-N301 : reverse engineering, librairie Python & contrôle web
+# 🎛️ rn301-py — Yamaha R-N301 : reverse engineering, librairie Python & contrôle web
+
+> Le **repo** s'appelle `rn301-py` ; le **package Python** qu'il contient
+> s'appelle `rn301` (`pip install rn301`, `from rn301 import …`).
 
 Projet de contrôle complet d'un ampli hi-fi **Yamaha R-N301** (2013) sans cloud,
 sans app officielle : protocole **YNC** (Yamaha Network Control) reverse-engineeré
