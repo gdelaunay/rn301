@@ -173,9 +173,32 @@ Speaker A/B, Balance...) via récepteur IR — si leur device ≠ 7F01, il faudr
 ```
 
 Fichiers **non distribués** (propriété Yamaha/tiers, gardés en local,
-gitignorés) : l'APK *NP Controller v4.60* (téléchargeable sur APKPure),
-le manuel `R-N301_om_G.pdf`, la doc `Remote_Control_Code.pdf`, `manual.txt`.
-Les scripts de `tools/` s'attendent à trouver l'APK à la racine du projet.
+gitignorés) : le manuel `R-N301_om_G.pdf`, la doc `Remote_Control_Code.pdf`,
+`manual.txt`.
+
+Pour reproduire l'analyse de l'app officielle : téléchargez l'APK
+**NP Controller v4.60** sur
+[APKPure](https://apkpure.com/network-player-controller/com.yamaha.npcontroller)
+et placez-le à la racine du projet (nom attendu par les scripts :
+`NETWORK PLAYER CONTROLLER_4.60_APKPure.apk`). Décompression/décompilation :
+
+```bash
+pip install androguard loguru   # dans le .venv
+
+# 1. strings + inventaire des classes        -> apk/decompiled/
+python tools/analyze_apk.py strings
+python tools/analyze_apk.py classes
+
+# 2. trouver les classes qui construisent le XML YNC, puis les décompiler
+python tools/decompile.py refs "Main_Zone"
+python tools/decompile.py src com/yamaha/npcontroller/j/q   # -> apk/decompiled/src/…/q.java
+
+# 3. extraire la table des ~90 opérations YNC depuis q.java
+python tools/extract_ops.py > docs/ops_brut.txt
+
+# 4. valider en live commande par commande contre l'ampli
+python tools/probe_gets.py      # -> amp/probe_gets.json
+```
 
 ## ⚠️ Avertissements
 
