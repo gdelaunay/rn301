@@ -19,11 +19,18 @@ Eventing GENA (volume/mute + transport du push, notifiés par l'ampli) :
     from rn301 import GenaClient
     gena = GenaClient("192.168.1.91")
     gena.subscribe("RenderingControl", lambda svc, changed: print(changed))
+
+Découverte SSDP (trouver l'ampli sans IP fixe) :
+    from rn301 import discover_one, RN301
+    found = discover_one()
+    amp = RN301(found["host"]) if found else None
 """
 from .rn301 import RN301, YNCError, SOURCE_TAGS, REMOTE_KEYS
 from .push import PushServer, PushError, Renderer, FileServer, didl_metadata
 from .gena import GenaClient, GenaError, parse_propertyset
+from .discover import discover, discover_one, parse_device_desc, DiscoverError
 
 __all__ = ["RN301", "YNCError", "SOURCE_TAGS", "REMOTE_KEYS",
            "PushServer", "PushError", "Renderer", "FileServer", "didl_metadata",
-           "GenaClient", "GenaError", "parse_propertyset"]
+           "GenaClient", "GenaError", "parse_propertyset",
+           "discover", "discover_one", "parse_device_desc", "DiscoverError"]
