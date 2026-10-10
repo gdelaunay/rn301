@@ -244,6 +244,13 @@ listes et tuner restent à interroger en YNC.
    l'abonné mort. Il doit être joignable depuis l'ampli (IP LAN, pare-feu).
 7. **Trous de `SEQ`** = events perdus → se re-synchroniser en SOAP
    (`GetTransportInfo`…) ; `GenaClient.missed()` les compte.
+8. **Un seul abonné actif par service, en pratique.** Constaté en live : un
+   processus tué sans `UNSUBSCRIBE` laisse un SID fantôme qui **affame** les
+   nouveaux abonnés (SUBSCRIBE → 200 + SID, mais aucun NOTIFY livré, pas même
+   l'initial) jusqu'à son expiration (~300 s sans renouvellement). Règle :
+   une seule instance de client GENA par ampli, et toujours fermer proprement
+   (`close()` / Ctrl+C → UNSUBSCRIBE). Si les events s'arrêtent : attendre
+   ~5 min ou redémarrer l'ampli.
 
 ### Échelle de volume : UPnP == YNC
 
