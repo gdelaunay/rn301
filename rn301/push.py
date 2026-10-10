@@ -33,6 +33,8 @@ import urllib.error
 import xml.sax.saxutils as sx
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from ._locks import amp_lock
+
 RENDERER_PORT = 8080
 AVT_NS = "urn:schemas-upnp-org:service:AVTransport:1"
 
@@ -80,21 +82,24 @@ class _FileHandler(BaseHTTPRequestHandler):
         pass
 
     def _serve(self, head_only: bool = False):
+        # l'état servi (fichier, pochette) vit sur le FileServer (wrapper),
+        # pas sur le ThreadingHTTPServer — d'où l'accès via .owner
+        owner = getattr(self.server, "owner", None)
         # /albumart/… → pochette intégrée extraite du fichier poussé
         if self.path.startswith("/albumart"):
-            data = getattr(self.server, "cover_data", None)
+            data = owner.cover_data if owner else None
             if data is None:
                 self.send_error(404)
                 return
             self.send_response(200)
-            self.send_header("Content-Type", getattr(self.server, "cover_mime", "image/jpeg"))
+            self.send_header("Content-Type", owner.cover_mime or "image/jpeg")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             if not head_only:
                 self.wfile.write(data)
             return
         # chemin servi = /<n'importe quoi> → le fichier enregistré sur le serveur
-        path: str = getattr(self.server, "push_file_path", None)  # type: ignore[attr-defined]
+        path: str | None = owner.file_path if owner else None
         if not path or not os.path.isfile(path):
             self.send_error(404)
             return
@@ -156,6 +161,7 @@ class FileServer:
 
     def __init__(self, host: str = "0.0.0.0", port: int = 9000):
         self.host, self.port = host, port
+        self.file_path: str | None = None
         self.cover_data: bytes | None = None
         self.cover_mime: str = "image/jpeg"
         self._httpd: ThreadingHTTPServer | None = None
@@ -165,6 +171,7 @@ class FileServer:
         if self._httpd:
             return
         self._httpd = ThreadingHTTPServer((self.host, self.port), _FileHandler)
+        self._httpd.owner = self          # le handler lit l'état via .owner
         self.port = self._httpd.server_address[1]
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
@@ -176,8 +183,7 @@ class FileServer:
             self._httpd = None
 
     def set_file(self, path: str):
-        assert self._httpd is not None, "serveur non démarré"
-        self._httpd.push_file_path = os.path.abspath(path)  # type: ignore[attr-defined]
+        self.file_path = os.path.abspath(path)
 
     def set_cover(self, data: bytes | None, mime: str = "image/jpeg"):
         self.cover_data, self.cover_mime = data, mime
@@ -368,6 +374,9 @@ class Renderer:
     def __init__(self, amp: str, port: int = RENDERER_PORT, timeout: float = 10.0):
         self.ctrl = f"http://{amp}:{port}/AVTransport/ctrl"
         self.timeout = timeout
+        # même verrou que le client YNC du même ampli : une seule requête à la
+        # fois, tous canaux confondus (quirk firmware, voir _locks.py)
+        self._lock = amp_lock(amp)
 
     def _soap(self, action: str, body: str) -> str:
         req = urllib.request.Request(
@@ -377,7 +386,7 @@ class Renderer:
                      "SOAPAction": f'"{AVT_NS}#{action}"'},
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            with self._lock, urllib.request.urlopen(req, timeout=self.timeout) as r:
                 return r.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")

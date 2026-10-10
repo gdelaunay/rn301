@@ -12,14 +12,19 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 
+from ._locks import amp_lock
+
 DEFAULT_HOST = "192.168.1.91"
 CTRL_PATH = "/YamahaRemoteControl/ctrl"
 
-# Volume R-N301 : échelle matérielle 0..100, plafonnée à 80 par le réglage
-# « Max Volume » de l'ampli (modifiable en façade) — un PUT de 100 est clampé à 80
-# par le firmware. VOL_MAX reflète donc la config de CET appareil, pas le protocole.
-# Voir ROADMAP.md §1.3 (lire le Max Volume au lieu de le coder en dur).
-VOL_MIN, VOL_MAX, VOL_STEP = 0, 80, 1
+# Échelle de volume du PROTOCOLE : 0..100. Le firmware clampe lui-même à son
+# réglage « Max Volume » (configuré en façade, 80 par défaut sur cet appareil) :
+# un PUT de 100 sur un ampli réglé à 80 est accepté et appliqué à 80 (validé en
+# live). Aucun chemin YNC connu ne permet de LIRE ce réglage (absent des ~90 ops
+# de l'app) → ne pas coder de plafond matériel ici, laisser le firmware clampler.
+# RN301(max_volume=N) ajoute un plafond LOGICIEL optionnel (sécurité des
+# automatisations), indépendant du matériel.
+VOL_MIN, VOL_MAX, VOL_STEP = 0, 100, 1
 
 # Source (telle qu'affichée par Input_Sel) -> tag XML YNC.
 # NB: validé en live — c'est NET_RADIO (comme dans l'app, q.java), pas Net_Radio.
@@ -95,10 +100,17 @@ def _tag(path: str) -> str:
 class RN301:
     """Client YNC du Yamaha R-N301."""
 
-    def __init__(self, host: str = DEFAULT_HOST, timeout: float = 5.0, retries: int = 3):
+    def __init__(self, host: str = DEFAULT_HOST, timeout: float = 5.0, retries: int = 3,
+                 max_volume: int | None = None):
         self.url = f"http://{host}{CTRL_PATH}" if not host.startswith("http") else host + CTRL_PATH
         self.timeout = timeout
         self.retries = retries
+        # plafond logiciel optionnel (None = échelle du protocole 0..VOL_MAX,
+        # le firmware appliquant de toute façon son propre « Max Volume »)
+        self.max_volume = max_volume
+        # verrou partagé avec les autres clients du même ampli (voir _locks.py) :
+        # le R-N301 ne traite qu'une requête à la fois, sinon RC=3
+        self._lock = amp_lock(host)
 
     # ------------------------------------------------------------------ bas niveau
 
@@ -132,23 +144,28 @@ class RN301:
         RC != 0 (ex RC=3 = ampli occupé/pas prêt) est retenté comme un échec
         transitoire : le R-N301 refuse parfois une commande valide s'il est
         sollicité ailleurs (quirk firmware documenté).
+
+        Toute la boucle (retries compris) tient le verrou de l'ampli : aucune
+        requête concurrente d'un autre client (webapp, script, Renderer…)
+        ne passe pendant ce temps.
         """
         last = None
-        for attempt in range(self.retries):
-            rsp = self._raw(cmd, xml)
-            try:
-                root = ET.fromstring(rsp)
-            except ET.ParseError as e:
-                raise YNCError(f"réponse XML invalide: {e}", body=rsp)
-            rc = root.get("RC", "?")
-            if rc == "0":
-                return root
-            last = (rc, rsp)
-            if attempt < self.retries - 1:
-                # RC=3 = occupé/pas prêt. Après un changement de source réseau,
-                # l'ampli met ~4-5 s ; des retries trop rapprochés semblent
-                # entretenir l'état occupé -> délai long (validé en live).
-                time.sleep(5.0)
+        with self._lock:
+            for attempt in range(self.retries):
+                rsp = self._raw(cmd, xml)
+                try:
+                    root = ET.fromstring(rsp)
+                except ET.ParseError as e:
+                    raise YNCError(f"réponse XML invalide: {e}", body=rsp)
+                rc = root.get("RC", "?")
+                if rc == "0":
+                    return root
+                last = (rc, rsp)
+                if attempt < self.retries - 1:
+                    # RC=3 = occupé/pas prêt. Après un changement de source réseau,
+                    # l'ampli met ~4-5 s ; des retries trop rapprochés semblent
+                    # entretenir l'état occupé -> délai long (validé en live).
+                    time.sleep(5.0)
         raise YNCError(f"ampli a refusé la commande (RC={last[0]})", rc=last[0], body=last[1])
 
     def get(self, path: str) -> str | None:
@@ -223,26 +240,35 @@ class RN301:
         # (400 aléatoires) -> lecture via le bloc Basic_Status, toujours fiable.
         return self.basic_status()["volume"]
 
-    def set_volume(self, val: int) -> None:
-        """Volume absolu, Val 0..100 (Exp=0)."""
-        val = max(VOL_MIN, min(VOL_MAX, int(val)))
+    def _clamp_volume(self, val: int) -> int:
+        """Plafond logiciel (max_volume) s'il est défini, sinon échelle protocole
+        0..VOL_MAX. Le firmware applique en plus son propre « Max Volume »."""
+        cap = self.max_volume if self.max_volume is not None else VOL_MAX
+        return max(VOL_MIN, min(cap, int(val)))
+
+    def set_volume(self, val: int) -> int:
+        """Volume absolu (échelle protocole 0..100, clampé à max_volume s'il est
+        défini). Renvoie la valeur effectivement envoyée — le firmware peut
+        encore la clamper à son réglage « Max Volume » (non lisible en YNC)."""
+        val = self._clamp_volume(val)
         self._request(
             "PUT",
             "<Main_Zone><Volume><Lvl>"
             f"<Val>{val}</Val><Exp>0</Exp><Unit></Unit>"
             "</Lvl></Volume></Main_Zone>",
         )
+        return val
 
     def volume_up(self, step: int = 2) -> int:
         """Volume relatif. La syntaxe 'Up N.0 dB' est REFUSÉE par ce firmware
         (RC=3, validé en live) -> lecture + calcul + écriture absolue.
         Renvoie le nouveau volume."""
-        new = min(VOL_MAX, self.get_volume() + step)
+        new = self._clamp_volume(self.get_volume() + step)
         self.set_volume(new)
         return new
 
     def volume_down(self, step: int = 2) -> int:
-        new = max(VOL_MIN, self.get_volume() - step)
+        new = self._clamp_volume(self.get_volume() - step)
         self.set_volume(new)
         return new
 
