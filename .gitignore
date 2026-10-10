@@ -21,3 +21,4 @@ ROADMAP.md
 build/
 *.egg-info/
 dist/
+webapp/pack/

@@ -319,6 +319,13 @@ class Handler(BaseHTTPRequestHandler):
                     amp.volume_up(d) if d > 0 else amp.volume_down(-d)
                 else:
                     raise ValueError("volume: 'val' ou 'delta' requis")
+                # Ack léger : relecture volume/mute en UN seul GET YNC au lieu du
+                # full_state() du wrapper générique (6-8 GET séquentiels, ~1 s).
+                # L'UI s'en sert comme confirmation fraîche juste après le set
+                # (notamment pour caler net un clamp du firmware, ex. 100 → 80).
+                # Pas de clé "state" : l'UI ne remplace pas son état complet ici.
+                st = amp.basic_status()
+                return {"ok": True, "volume": st["volume"], "mute": st["mute"]}
             case "/api/mute":
                 if "on" in body:
                     amp.set_mute(bool(body["on"]))

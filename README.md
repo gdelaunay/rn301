@@ -169,20 +169,20 @@ amp._request("GET", "<System><Config>GetParam</Config></System>")
 Page de contrôle sombre et responsive (aucun asset externe) + API JSON.
 Refresh auto toutes les 4 s.
 
-**Contrôles de la page** : power, volume (slider 0–80 + −/+), mute, 11 sources,
+**Contrôles de la page** : power, volume (slider 0–100 + −/+), mute, 11 sources,
 lecteur "now playing" (pochette, play/pause/skip, shuffle/repeat), tuner
 (bande, fréquence, pas-à-pas, presets 1–8), **navigateur DLNA/Net Radio
 cliquable** (le menu de l'ampli affiché dans le navigateur !), **push audio
 DLNA** (upload d'un fichier ou URL → joué sur l'ampli), Network Standby,
 touches IR.
 
-**API** (`POST` JSON, renvoie `{ok, state}` complet) :
+**API** (`POST` JSON, renvoie `{ok, state}` complet — sauf `/api/volume`, voir ci-dessous) :
 
 | Route | Body | Action |
 |---|---|---|
 | `/api/state` (GET) | — | état agrégé (zone + play_info + list_info + réseau) |
 | `/api/power` | `{on:bool}` ou `{}` | set / toggle |
-| `/api/volume` | `{val:0..80}` ou `{delta:±n}` | absolu / relatif |
+| `/api/volume` | `{val:0..100}` ou `{delta:±n}` | absolu / relatif — renvoie `{ok, volume, mute}` : ack **léger** (1 seul GET YNC, relu après le set) au lieu de l'état agrégé, pour que le slider se cale vite et sans marteler l'ampli |
 | `/api/mute` | `{on:bool}` ou `{}` | set / toggle |
 | `/api/input` | `{val:"SERVER"}` | changement de source |
 | `/api/playback` | `{action:"Play", source?}` | Play/Stop/Pause/Skip Fwd/Skip Rev |
