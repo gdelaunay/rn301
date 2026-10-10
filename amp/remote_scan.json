@@ -1,0 +1,117 @@
+[
+ {
+  "code": "7F0138C7",
+  "byte": "38",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F0139C6",
+  "byte": "39",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F013AC5",
+  "byte": "3A",
+  "accepted": true,
+  "diff": {
+   "input": [
+    "SERVER",
+    "NET RADIO"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "code": "7F013BC4",
+  "byte": "3B",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F013CC3",
+  "byte": "3C",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F013DC2",
+  "byte": "3D",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F013EC1",
+  "byte": "3E",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F013FC0",
+  "byte": "3F",
+  "accepted": true,
+  "diff": {
+   "input": [
+    "NET RADIO",
+    "AirPlay"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "code": "7F0140BF",
+  "byte": "40",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F0141BE",
+  "byte": "41",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F0142BD",
+  "byte": "42",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F0143BC",
+  "byte": "43",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F0144BB",
+  "byte": "44",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F0145BA",
+  "byte": "45",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ },
+ {
+  "code": "7F0146B9",
+  "byte": "46",
+  "accepted": true,
+  "diff": {},
+  "note": ""
+ }
+]

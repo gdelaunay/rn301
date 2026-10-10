@@ -22,13 +22,14 @@ import urllib.request
 AMP = "http://192.168.1.91/YamahaRemoteControl/ctrl"
 RESULTS = "amp/remote_scan.json"
 
-STATE_QUERY = (
-    '<YAMAHA_AV cmd="GET">'
-    '<Main_Zone><Power_Control><Power>GetParam</Power></Power_Control>'
-    '<Volume><Lvl>GetParam</Lvl><Mute>GetParam</Mute></Volume>'
-    '<Input><Input_Sel>GetParam</Input_Sel></Input></Main_Zone>'
-    '</YAMAHA_AV>'
-)
+# Le R-N301 refuse les requetes combinees (RC=2) -> une requete par param
+STATE_QUERIES = {
+    "power": '<YAMAHA_AV cmd="GET"><Main_Zone><Power_Control><Power>GetParam</Power></Power_Control></Main_Zone></YAMAHA_AV>',
+    "volume": '<YAMAHA_AV cmd="GET"><Main_Zone><Volume><Lvl>GetParam</Lvl></Volume></Main_Zone></YAMAHA_AV>',
+    "mute": '<YAMAHA_AV cmd="GET"><Main_Zone><Volume><Mute>GetParam</Mute></Volume></Main_Zone></YAMAHA_AV>',
+    "input": '<YAMAHA_AV cmd="GET"><Main_Zone><Input><Input_Sel>GetParam</Input_Sel></Input></Main_Zone></YAMAHA_AV>',
+}
+STATE_TAGS = {"power": "Power", "volume": "Val", "mute": "Mute", "input": "Input_Sel"}
 
 
 def ctrl(xml: str) -> str:
@@ -40,18 +41,25 @@ def ctrl(xml: str) -> str:
         return f"<error {e}>"
 
 
+def ctrl_retry(xml: str, tag: str, tries: int = 4) -> str:
+    """Le R-N301 repond parfois vide quand il est occupe -> retry."""
+    import re
+    for i in range(tries):
+        rsp = ctrl(xml)
+        if re.search(rf"<{tag}>[^<]+</{tag}>", rsp):
+            return rsp
+        time.sleep(0.5)
+    return rsp
+
+
 def snapshot() -> dict:
     import re
-    rsp = ctrl(STATE_QUERY)
-    def g(tag):
-        m = re.search(rf"<{tag}>([^<]*)</{tag}>", rsp)
-        return m.group(1) if m else None
-    return {
-        "power": g("Power"),
-        "volume": g("Val"),
-        "mute": g("Mute"),
-        "input": g("Input_Sel"),
-    }
+    state = {}
+    for key, q in STATE_QUERIES.items():
+        rsp = ctrl_retry(q, STATE_TAGS[key])
+        m = re.search(rf"<{STATE_TAGS[key]}>([^<]*)</{STATE_TAGS[key]}>", rsp)
+        state[key] = m.group(1) if m else None
+    return state
 
 
 def code_for(xx: int) -> str:
@@ -70,7 +78,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--range", default="00-FF", help="plage hex, ex 00-3F ou 46")
     ap.add_argument("--interactive", action="store_true")
-    ap.add_argument("--delay", type=float, default=0.8)
+    ap.add_argument("--delay", type=float, default=1.0)
     args = ap.parse_args()
 
     if "-" in args.range:
@@ -105,7 +113,7 @@ def main():
             note = input(f"[{code}] RC_ok={rc_ok} diff={diff or '-'} — effet vu/entendu ? (entrer=rien) : ").strip()
         results.append({"code": code, "byte": f"{xx:02X}", "accepted": rc_ok,
                         "diff": diff, "note": note})
-        flag = "⚡" if (diff or note) else ("✓" if rc_ok else "✗")
+        flag = "!!" if (diff or note) else ("ok" if rc_ok else "no")
         print(f"[{code}] {flag} accepted={rc_ok} diff={diff or ''} {note}")
 
     with open(RESULTS, "w") as f:
