@@ -20,17 +20,17 @@ sans app officielle : protocole **YNC** (Yamaha Network Control) reverse-enginee
 > (`:8080`) et injection IR `Remote_Signal`.
 
 ```
-┌────────────────┐                                         ┌───────────────────┐
-│   Navigateur   │                                         │ Serveur DLNA/UPnP │
-│  (page ctrl)   │                                         │ (NAS, MiniDLNA…)  │
-└───────┬────────┘                                         └────────▲─────────┘
-        │  HTTP                                                     ┆ optionnel
-        │  page + API JSON                                          ┆ (stream audio)
-        │                                                           ┆
-┌───────▼────────┐  import   ┌────────────────┐  HTTP/XML  ┌────────┴─────────┐
-│    webapp/     │──────────►│     rn301/     │──────────►│   Yamaha R-N301   │
-│   server.py    │           │   (librairie)  │   (YNC)    │   192.168.1.91    │
-└────────────────┘           └────────────────┘            └───────────────────┘
+                     ┌────────────────┐
+                     │     rn301/     │
+                     │   (library)    │
+                     └───┬────────┬───┘
+        HTTP + XML (YNC) │        │ UPnP/SOAP + GENA + HTTP
+                     :80 │        │ :8080 (+ file server)
+                 ┌───────▼────────▼──────┐
+                 │      Yamaha R-N301     │
+                 │      192.168.1.XX      │
+                 │    (SSDP discovered)   │
+                 └────────────────────────┘
 ```
 
 ## 🎯 État de l'art — ce que ce projet apporte
@@ -78,7 +78,7 @@ provenance et horodatage des validations live),
 
 ```bash
 # dans ce repo (aucune installation nécessaire, zéro dépendance)
-python -c "from rn301 import RN301; amp=RN301('192.168.1.91'); amp.power_on()"
+python -c "from rn301 import discover_one, RN301; amp=RN301(discover_one()['host']); amp.power_on()"
 
 # serveur web (page de contrôle sur http://localhost:8080)
 python -m webapp.server --port 8080 --amp 192.168.1.91
@@ -91,13 +91,13 @@ python -m unittest discover tests
 
 ```bash
 # uv — path dependency (editable : les modifs de la lib sont visibles direct)
-uv add ../rn301 --editable
+uv add ../rn301-py --editable
 
 # pip classique
-pip install -e ../rn301
+pip install -e ../rn301-py
 
 # une fois le repo pushé sur un forge :
-uv add git+https://github.com/<user>/rn301
+uv add git+https://github.com/<user>/rn301-py
 ```
 
 Le package installe aussi deux CLI : `rn301-discover` (scan SSDP → identité
@@ -232,18 +232,13 @@ transport). Options : `--push-port` (9000), `--music` (dossier d'upload),
 `--no-push`. Détails et coulisses du reverse : **`docs/DLNA_PUSH.md`**.
 
 Le renderer honore aussi l'**eventing GENA** (`SUBSCRIBE …/evt` → `SID` +
-`NOTIFY` à chaque changement), mesuré en live puis **implémenté dans la lib** :
-`GenaClient` (`rn301/gena.py` — serveur de callback, renouvellement auto des
-SID, `LastChange` accumulé par deltas, `wait_for`) et les événements de
-`PushServer` (`on_transport`, `wait_stopped`). Périmètre réel mesuré :
-GENA notifie le **volume/mute** (y compris depuis le bouton de façade et la
-télécommande, ~30 ms plus vite que le polling) et le **transport du push DLNA**,
-mais **jamais** `Power`, `Input_Sel`, ni la lecture réseau. Il complète donc le
-polling YNC sans le remplacer (la webapp poll toujours). Au passage : l'échelle
-de volume UPnP est **identique** au YNC (80 = 80 au plafond, le `0..100` du SCPD
-est déclaratif). Le contrat complet du service est archivé dans
-`amp/upnp_avtransport.xml` (15 actions, dont `Seek`/`Next`/`Previous` non
-exploitées, et `NumberOfTracks 0..1` → pas de playlist côté ampli).
+`NOTIFY` à chaque changement), implémenté dans la lib : `GenaClient`
+(`rn301/gena.py`) et les événements `PushServer` (`on_transport`,
+`wait_stopped`). Périmètre mesuré en live : GENA notifie le **volume/mute**
+(façade et télécommande comprises, ~30 ms plus vite que le polling) et le
+**transport du push DLNA** — jamais `Power`, `Input_Sel` ni la lecture réseau :
+il complète le polling YNC, ne le remplace pas. Contrat, comportements mesurés
+et pièges du protocole : **`docs/DLNA_PUSH.md` §5**.
 
 ```python
 from rn301 import GenaClient
