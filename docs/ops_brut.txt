@@ -1,0 +1,293 @@
+# Table complète des opérations YNC (extrait de k.java + q.java)
+
+op 301989889 [PUT/écriture]
+  chemin: System/Config/Device_Name
+
+op 301989890 [PUT/écriture]
+
+op 301989891 [PUT/écriture]
+
+op 301989892 [PUT/écriture]
+
+op 301989893 [PUT/écriture]
+  chemin: System/Network/MAC_Address_Filter/Mode
+
+op 301989894 [PUT/écriture]
+  chemin: System/Network/MAC_Address_Filter/Address_1
+
+op 301989895 [PUT/écriture]
+  chemin: System/Network/MAC_Address_Filter/Address_2
+
+op 301989896 [PUT/écriture]
+  chemin: System/Network/MAC_Address_Filter/Address_3
+
+op 301989897 [PUT/écriture]
+  chemin: System/Network/MAC_Address_Filter/Address_4
+
+op 301989898 [PUT/écriture]
+  chemin: System/Network/MAC_Address_Filter/Address_5
+
+op 301989899 [PUT/écriture]
+  chemin: System/Config/Network_Standby
+
+op 301989900 [PUT/écriture]
+  chemin: System/Config/Sleep
+
+op 301989901 [PUT/écriture]
+  chemin: System/Config/Gapless_Playback
+
+op 301989902 [PUT/écriture]
+  chemin: System/Power
+
+op 301989903 [PUT/écriture]
+
+op 301989904 [PUT/écriture]
+  chemin: System/Input/Input_Sel
+
+op 301989905 [PUT/écriture]
+  chemin: Player/Play_Control/Playback
+
+op 301989906 [PUT/écriture]
+  chemin: Player/Play_Control/Play_Mode
+  valeurs: ['Shuffle']
+
+op 301989907 [PUT/écriture]
+  chemin: Player/Play_Control/Play_Mode
+  valeurs: ['Repeat']
+
+op 301989908 [PUT/écriture]
+  chemin: Player/Play_Control/Track_Number
+
+op 301989909 [PUT/écriture]
+  chemin: Player/List_Control/Page/Cursor
+  valeurs: ['Return to Home', 'Return']
+
+op 301989910 [PUT/écriture]
+  chemin: Player/List_Control/Direct_Sel
+
+op 301989911 [PUT/écriture]
+  chemin: Player/List_Control/Jump_Line
+
+op 301989912 [PUT/écriture]
+  chemin: Player/Play_Control/Play_Next_URI
+
+op 301989913 [PUT/écriture]
+  chemin: Player/Play_Control/Feedback_Param
+
+op 301989914 [PUT/écriture]
+
+op 301989915 [PUT/écriture]
+  chemin: System/Misc/Tray
+  valeurs: ['Open/Close']
+
+op 301989916 [PUT/écriture]
+  chemin: System/Sound/Pure_Direct/Mode
+
+op 301989917 [PUT/écriture]
+  chemin: Player/Play_Control/iPod_Mode
+
+op 301989918 [PUT/écriture]
+
+op 301989919 [PUT/écriture]
+
+op 301989920 [PUT/écriture]
+
+op 301989921 [PUT/écriture]
+
+op 301989922 [PUT/écriture]
+  chemin: System/Firmware
+
+op 301989923 [PUT/écriture]
+
+op 301989924 [PUT/écriture]
+  chemin: Player/Service_Control/Buffer_Ctrl/radiko
+
+op 301989925 [PUT/écriture]
+  chemin: Player/Service_Control/radiko_bg
+
+op 301989937 [PUT/écriture]
+  chemin: System/Volume/Lvl
+
+op 301989938 [PUT/écriture]
+  chemin: System/Volume/Mute
+
+op 301989940 [PUT/écriture]
+  chemin: Tuner/Play_Control/Band
+
+op 301989941 [PUT/écriture]
+  chemin: Tuner/Play_Control/Tuning/FM/Freq
+
+op 301989943 [PUT/écriture]
+  chemin: Tuner/Play_Control/Service
+
+op 301989944 [PUT/écriture]
+  chemin: Tuner/Play_Control/Preset/FM/Preset_Sel
+
+op 301989945 [PUT/écriture]
+  chemin: Tuner/Play_Control/Preset/DAB/Preset_Sel
+
+op 301989952 [PUT/écriture]
+  chemin: System/Misc/Clock/Param
+
+op 301989953 [PUT/écriture]
+  chemin: System/Misc/Timer/Mode
+
+op 301989954 [PUT/écriture]
+  chemin: System/Misc/Timer/Param
+  valeurs: ['Once', 'Every']
+
+op 301989955 [PUT/écriture]
+  chemin: System/Misc/Network/MAC_Address_Filter
+  valeurs: ['Toggle']
+
+op 318767105 [GET/lecture]
+  chemin: System/Misc/Network
+  valeurs: ['Network_Name']
+
+op 318767106 [GET/lecture]
+
+op 318767107 [GET/lecture]
+
+op 318767108 [GET/lecture]
+  chemin: System
+  valeurs: ['Service', 'Info']
+
+op 318767109 [GET/lecture]
+  chemin: System/Network/MAC_Address_Filter
+  valeurs: ['Mode']
+
+op 318767110 [GET/lecture]
+  chemin: System/Network/MAC_Address_Filter
+  valeurs: ['Address_1']
+
+op 318767111 [GET/lecture]
+  chemin: System/Network/MAC_Address_Filter
+  valeurs: ['Address_2']
+
+op 318767112 [GET/lecture]
+  chemin: System/Network/MAC_Address_Filter
+  valeurs: ['Address_3']
+
+op 318767113 [GET/lecture]
+  chemin: System/Network/MAC_Address_Filter
+  valeurs: ['Address_4']
+
+op 318767114 [GET/lecture]
+  chemin: System/Network/MAC_Address_Filter
+  valeurs: ['Address_5']
+
+op 318767115 [GET/lecture]
+  chemin: System/Power_Control
+  valeurs: ['Saving']
+
+op 318767116 [GET/lecture]
+  chemin: System/Config
+  valeurs: ['Sleep']
+
+op 318767117 [GET/lecture]
+  chemin: System/Config
+  valeurs: ['Gapless_Playback']
+
+op 318767118 [GET/lecture]
+  chemin: System/Power_Control
+  valeurs: ['Power']
+
+op 318767120 [GET/lecture]
+  chemin: System/Input
+  valeurs: ['Input_Sel']
+
+op 318767122 [GET/lecture]
+  chemin: Player/Play_Control
+  valeurs: ['Shuffle']
+
+op 318767123 [GET/lecture]
+  chemin: Player/Play_Control
+  valeurs: ['Repeat']
+
+op 318767130 [GET/lecture]
+
+op 318767131 [GET/lecture]
+  chemin: Player
+  valeurs: ['Tray']
+
+op 318767132 [GET/lecture]
+  chemin: System/Sound
+  valeurs: ['Pure_Direct', 'Mode']
+
+op 318767133 [GET/lecture]
+  chemin: Player/Play_Control
+  valeurs: ['iPod_Mode']
+
+op 318767134 [GET/lecture]
+
+op 318767136 [GET/lecture]
+  chemin: System/Feature
+  valeurs: ['YMAP']
+
+op 318767137 [GET/lecture]
+  valeurs: ['System', 'Config']
+
+op 318767138 [GET/lecture]
+  chemin: System/Misc/Update/Yamaha_Network_Site
+  valeurs: ['Status']
+
+op 318767139 [GET/lecture]
+  chemin: System
+  valeurs: ['Credential']
+
+op 318767140 [GET/lecture]
+  chemin: Player/Service_Control/Buffer_Ctrl/System/Misc
+  valeurs: ['radiko']
+
+op 318767152 [GET/lecture]
+  chemin: System
+  valeurs: ['Basic_Status']
+
+op 318767153 [GET/lecture]
+  chemin: System/Volume
+  valeurs: ['Lvl']
+
+op 318767154 [GET/lecture]
+  chemin: System/Volume
+  valeurs: ['Mute']
+
+op 318767155 [GET/lecture]
+  valeurs: ['Tuner']
+
+op 318767160 [GET/lecture]
+  chemin: Tuner/Play_Control/Preset
+  valeurs: ['FM', 'Preset_Sel_Item']
+
+op 318767161 [GET/lecture]
+  chemin: Tuner/Play_Control/Preset
+  valeurs: ['DAB']
+
+op 318767169 [GET/lecture]
+  chemin: System/Misc
+  valeurs: ['Timer']
+
+op 318767170 [GET/lecture]
+  chemin: System/Misc/Timer
+  valeurs: ['Param']
+
+op 318767171 [GET/lecture]
+  chemin: System/Misc/Network
+  valeurs: ['MAC_Address_Filter']
+
+op 318767172 [GET/lecture]
+  valeurs: ['Player']
+
+op 318832640 [GET/lecture]
+  chemin: Player
+  valeurs: ['List_Info']
+
+op 318898176 [GET/lecture]
+  valeurs: ['Player', 'Play_Info']
+
+op 318963712 [GET/lecture]
+  chemin: System/Misc
+  valeurs: ['Network']
+
+op 319029248 [GET/lecture]
+  chemin: Player
+  valeurs: ['Tuner', 'GetParam', 'Input']

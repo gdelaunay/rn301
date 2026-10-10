@@ -1,0 +1,142 @@
+{
+ "power_zone": {
+  "http": 200,
+  "ok": true,
+  "rsp": "<YAMAHA_AV rsp=\"GET\" RC=\"0\"><Main_Zone><Power_Control><Power>On</Power></Power_Control></Main_Zone></YAMAHA_AV>"
+ },
+ "power_system": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "volume": {
+  "http": 200,
+  "ok": true,
+  "rsp": "<YAMAHA_AV rsp=\"GET\" RC=\"0\"><Main_Zone><Volume><Lvl><Val>51</Val><Exp>0</Exp><Unit></Unit></Lvl></Volume></Main_Zone></YAMAHA_AV>"
+ },
+ "mute": {
+  "http": 200,
+  "ok": true,
+  "rsp": "<YAMAHA_AV rsp=\"GET\" RC=\"0\"><Main_Zone><Volume><Mute>Off</Mute></Volume></Main_Zone></YAMAHA_AV>"
+ },
+ "input": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "input_items": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "basic_status": {
+  "http": 200,
+  "ok": true,
+  "rsp": "<YAMAHA_AV rsp=\"GET\" RC=\"0\"><Main_Zone><Basic_Status><Power_Control><Power>On</Power></Power_Control><Volume><Lvl><Val>51</Val><Exp>0</Exp><Unit></Unit></Lvl><Mute>Off</Mute></Volume><Input><Input_Sel>LINE1</Input_Sel><Input_Sel_Item_Info><Param>LINE1</Param><RW>RW</RW><Title></Title><Icon><On>/YamahaRemoteControl/Icons/icon067.png</On><Off></Off></Icon><Src_Name></Src_Name><Src_Number>1</Src_Number></Input_Sel_Item_Info></Input></Basic_Status></Main_Zone></YAMAHA_AV>"
+ },
+ "system_config": {
+  "http": 200,
+  "ok": true,
+  "rsp": "<YAMAHA_AV rsp=\"GET\" RC=\"0\"><System><Config><Model_Name>R-N301</Model_Name><System_ID>0ED9C263</System_ID><Version>1.13/0.05</Version><Feature_Existence><Main_Zone>1</Main_Zone><Tuner>1</Tuner><Spotify>1</Spotify><Pandora>0</Pandora><SERVER>1</SERVER><NET_RADIO>1</NET_RADIO><AirPlay>1</AirPlay></Feature_Existence></Config></System></YAMAHA_AV>"
+ },
+ "network_standby": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "sleep": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "gapless": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "device_name": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "net_info": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "mac_filter": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "firmware_update": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "netradio_play_info": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "server_play_info": {
+  "http": 200,
+  "ok": true,
+  "rsp": "<YAMAHA_AV rsp=\"GET\" RC=\"0\"><SERVER><Play_Info><Feature_Availability>Not Ready</Feature_Availability><Playback_Info>Stop</Playback_Info><Play_Mode><Repeat>One</Repeat><Shuffle>On</Shuffle></Play_Mode><Play_Time>0</Play_Time><Meta_Info><Artist></Artist><Album></Album><Song></Song></Meta_Info><Album_ART><URL></URL><ID>0</ID><Format>YMF</Format></Album_ART></Play_Info></SERVER></YAMAHA_AV>"
+ },
+ "server_list": {
+  "http": 200,
+  "ok": true,
+  "rsp": "<YAMAHA_AV rsp=\"GET\" RC=\"0\"><SERVER><List_Info><Menu_Status>Ready</Menu_Status><Menu_Layer>1</Menu_Layer><Menu_Name></Menu_Name><Current_List><Line_1><Txt></Txt><Attribute>Unselectable</Attribute></Line_1><Line_2><Txt></Txt><Attribute>Unselectable</Attribute></Line_2><Line_3><Txt></Txt><Attribute>Unselectable</Attribute></Line_3><Line_4><Txt></Txt><Attribute>Unselectable</Attribute></Line_4><Line_5><Txt></Txt><Attribute>Unselectable</Attribute></Line_5><Line_6><Txt></Txt><Attribute>Unselectable</Attribute></Line_6><Line_7><Txt></Txt><Attribute>Unselectable</Attribute></Line_7><Line_8><Txt></Txt><Attribute>Unselectable</Attribute></Line_8></Current_List><Cursor_Position><Current_Line>1</Current_Line><Max_Line>0</Max_Line></Cursor_Position></List_Info></SERVER></YAMAHA_AV>"
+ },
+ "spotify_play_info": {
+  "http": 200,
+  "ok": true,
+  "rsp": "<YAMAHA_AV rsp=\"GET\" RC=\"0\"><Spotify><Play_Info><Feature_Availability>Not Ready</Feature_Availability><Playback_Info>Stop</Playback_Info><Meta_Info><Artist></Artist><Album></Album><Track></Track></Meta_Info><Input_Logo><URL_S>/YamahaRemoteControl/Logos/logo005.png</URL_S><URL_M></URL_M><URL_L></URL_L></Input_Logo></Play_Info></Spotify></YAMAHA_AV>"
+ },
+ "airplay_play_info": {
+  "http": 200,
+  "ok": true,
+  "rsp": "<YAMAHA_AV rsp=\"GET\" RC=\"0\"><AirPlay><Play_Info><Feature_Availability>Not Ready</Feature_Availability><Playback_Info>Stop</Playback_Info><Play_Time>0</Play_Time><Meta_Info><Artist></Artist><Album></Album><Song></Song></Meta_Info><Input_Logo><URL_S>/YamahaRemoteControl/Logos/logo004.png</URL_S><URL_M></URL_M><URL_L></URL_L></Input_Logo></Play_Info></AirPlay></YAMAHA_AV>"
+ },
+ "tuner_play_info": {
+  "http": 200,
+  "ok": true,
+  "rsp": "<YAMAHA_AV rsp=\"GET\" RC=\"0\"><Tuner><Play_Info><Feature_Availability>Not Ready</Feature_Availability><Search_Mode>Tuning</Search_Mode><Preset><Preset_Sel>1</Preset_Sel></Preset><Tuning><Band>AM</Band><Freq><Current><Val>1197</Val><Exp>0</Exp><Unit>kHz</Unit></Current><FM><Val>9910</Val><Exp>2</Exp><Unit>MHz</Unit></FM><AM><Val>1197</Val><Exp>0</Exp><Unit>kHz</Unit></AM></Freq></Tuning><FM_Mode>Auto</FM_Mode><Signal_Info><Tuned>Negate</Tuned><Stereo>Negate</Stereo></Signal_Info><Meta_Info><Program_Type></Program_Type><Program_Service></Program_Service><Radio_Text_A></Radio_Text_A><Radio_Text_B></Radio_Text_B><Clock_Time></Clock_Time></Meta_Info></Play_Info></Tuner></YAMAHA_AV>"
+ },
+ "tuner_preset": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "tuner_band": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "ipod_play_info": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "usb_play_info": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "netradio_shuffle": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "netradio_repeat": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ },
+ "sleep_zone": {
+  "http": 400,
+  "ok": false,
+  "rsp": ""
+ }
+}
