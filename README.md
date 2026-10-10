@@ -237,7 +237,9 @@ Le renderer honore aussi l'**eventing GENA** (`SUBSCRIBE …/evt` → `SID` +
 `wait_stopped`). Périmètre mesuré en live : GENA notifie le **volume/mute**
 (façade et télécommande comprises, ~30 ms plus vite que le polling) et le
 **transport du push DLNA** — jamais `Power`, `Input_Sel` ni la lecture réseau :
-il complète le polling YNC, ne le remplace pas. Contrat, comportements mesurés
+il complète le polling YNC, ne le remplace pas. La webapp l'exploite :
+volume/mute arrivent en push via SSE (`/api/events`), le reste de l'état reste
+pollé toutes les 4 s. Contrat, comportements mesurés
 et pièges du protocole : **`docs/DLNA_PUSH.md` §5**.
 
 ```python

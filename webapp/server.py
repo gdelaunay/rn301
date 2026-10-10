@@ -1,6 +1,8 @@
 """Serveur web de contrôle pour le Yamaha R-N301.
 
 100 % stdlib. API JSON + page de contrôle intégrée.
+Volume/mute en push instantané via GENA → SSE (`/api/events`) ; le reste de
+l'état est pollé toutes les 4 s (GENA ne notifie ni Power ni Input_Sel).
 
 Usage:
     .venv/Scripts/python -m webapp.server [--amp 192.168.1.91] [--port 8080]
@@ -10,18 +12,73 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import queue
 import re
+import threading
 import traceback
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from rn301 import RN301, YNCError
+from rn301 import RN301, YNCError, GenaClient
 from rn301.push import PushServer, PushError
 
 amp: RN301      # initialisé dans main()
 push: PushServer | None = None
+gena: GenaClient | None = None
 music_dir: str = "music"
+
+
+class EventHub:
+    """Hub SSE : les callbacks GENA publient, chaque navigateur connecté reçoit."""
+
+    def __init__(self):
+        self._clients: set[queue.Queue] = set()
+        self._lock = threading.Lock()
+
+    def register(self) -> queue.Queue:
+        q: queue.Queue = queue.Queue(maxsize=64)
+        with self._lock:
+            self._clients.add(q)
+        return q
+
+    def unregister(self, q: queue.Queue) -> None:
+        with self._lock:
+            self._clients.discard(q)
+
+    def publish(self, data: dict) -> None:
+        with self._lock:
+            clients = list(self._clients)
+        for q in clients:
+            try:
+                q.put_nowait(data)
+            except queue.Full:
+                pass                       # client trop lent : tant pis, le polling rattrape
+
+    @property
+    def client_count(self) -> int:
+        with self._lock:
+            return len(self._clients)
+
+
+hub = EventHub()
+
+
+def on_gena_event(service: str, changed: dict) -> None:
+    """Callback GENA (thread du serveur de callback) → hub SSE.
+
+    RenderingControl notifie Volume/Mute (échelle identique au YNC, mesuré) ;
+    attributs dans l'ordre channel-avant-val déjà gérés par GenaClient.
+    """
+    out: dict = {}
+    v = changed.get("Volume")
+    if v and v.get("channel") == "Master" and v.get("val", "").isdigit():
+        out["volume"] = int(v["val"])
+    m = changed.get("Mute")
+    if m and m.get("channel") == "Master":
+        out["mute"] = "On" if m.get("val") == "1" else "Off"
+    if out:
+        hub.publish(out)
 
 INDEX_HTML = r"""<!DOCTYPE html>
 <html lang="fr">
@@ -76,7 +133,7 @@ details summary{cursor:pointer;color:var(--dim);font-size:.85rem}
   <div class="gap"></div>
   <div class="row">
     <button onclick="vol(-2)">−</button>
-    <input type="range" id="vol" min="0" max="80" step="1" onchange="api('volume',{val:this.value})">
+    <input type="range" id="vol" min="0" max="100" step="1" onchange="api('volume',{val:this.value})">
     <button onclick="vol(+2)">＋</button>
     <span class="volval" id="volval">--</span>
   </div>
@@ -187,7 +244,7 @@ async function api(action,body,norefresh){
   }catch(e){toast('⚠ '+e.message);}
   if(!norefresh) refresh();
 }
-function vol(d){const v=Math.max(0,Math.min(80,(state.volume||0)+d));api('volume',{val:v});}
+function vol(d){const v=Math.max(0,Math.min(100,(state.volume||0)+d));api('volume',{val:v});}
 function togglePlay(){return playing?'Pause':'Play';}
 function playBtn(){pushMode?api('pushctl',{action:playing?'Pause':'Play'}):api('playback',{action:togglePlay()});}
 function shuffleNext(){shuffle=!shuffle;return shuffle?'On':'Off';}
@@ -217,7 +274,7 @@ async function refresh(){
 function render(s){
   state=s;
   const on=s.power==='On';
-  document.getElementById('sysinfo').textContent=`${s.model||'R-N301'} · v${s.version||'?'} · ${on?'🟢 allumé':'⚫ veille'}`;
+  document.getElementById('sysinfo').textContent=`${s.model||'R-N301'} · v${s.version||'?'} · ${on?'🟢 allumé':'⚫ veille'}${genaLive?' · ⚡GENA':''}`;
   const bp=document.getElementById('btnPower'); bp.classList.toggle('on',on);
   document.getElementById('btnMute').classList.toggle('on',s.mute==='On');
   document.getElementById('vol').value=s.volume??0;
@@ -303,6 +360,28 @@ function render(s){
 }
 
 refresh(); setInterval(refresh,4000);
+
+// volume/mute en push instantané (GENA → SSE) : le slider suit la télécommande
+// physique et le bouton de façade en ~30 ms, sans attendre le polling 4 s.
+let genaLive=false;
+const es=new EventSource('/api/events');
+es.onopen=()=>{genaLive=true;};
+es.onerror=()=>{genaLive=false;};
+es.onmessage=e=>{
+  try{
+    const d=JSON.parse(e.data);
+    genaLive=true;
+    if(d.volume!==undefined){
+      state.volume=d.volume;
+      document.getElementById('vol').value=d.volume;
+      document.getElementById('volval').textContent=(state.power==='On')?d.volume:'--';
+    }
+    if(d.mute!==undefined){
+      state.mute=d.mute;
+      document.getElementById('btnMute').classList.toggle('on',d.mute==='On');
+    }
+  }catch(_){}
+};
 </script>
 </body>
 </html>
@@ -311,6 +390,7 @@ refresh(); setInterval(refresh,4000);
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "RN301Web/1.0"
+    protocol_version = "HTTP/1.1"      # keep-alive : nécessaire au flux SSE
 
     def log_message(self, fmt, *args):
         pass  # silencieux
@@ -392,6 +472,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, INDEX_HTML.encode(), "text/html; charset=utf-8")
         elif path == "/api/state":
             self._json({"state": self.full_state()})
+        elif path == "/api/events":
+            self.sse_stream()
         elif path == "/api/inputs":
             try:
                 self._json({"inputs": amp.list_inputs()})
@@ -426,6 +508,45 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "image injoignable"}, 502)
         else:
             self._json({"error": "not found"}, 404)
+
+    def sse_stream(self):
+        """Flux Server-Sent Events : volume/mute poussés par GENA en direct.
+
+        Un thread par client (ThreadingHTTPServer) ; le flux reste ouvert,
+        commentaires `:ping` toutes les 15 s pour maintenir la connexion.
+        """
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        q = hub.register()
+        try:
+            # état courant immédiat (le client n'attend pas le premier changement)
+            if gena is not None:
+                seed = {}
+                v = gena.var("RenderingControl", "Volume")
+                if v and v.get("val", "").isdigit():
+                    seed["volume"] = int(v["val"])
+                m = gena.var("RenderingControl", "Mute")
+                if m:
+                    seed["mute"] = "On" if m.get("val") == "1" else "Off"
+                if seed:
+                    self.wfile.write(f"data: {json.dumps(seed)}\n\n".encode())
+                    self.wfile.flush()
+            while True:
+                try:
+                    data = q.get(timeout=15)
+                except queue.Empty:
+                    self.wfile.write(b":ping\n\n")
+                    self.wfile.flush()
+                    continue
+                self.wfile.write(f"data: {json.dumps(data)}\n\n".encode())
+                self.wfile.flush()
+        except (OSError, ValueError):
+            pass                              # client parti : BrokenPipe/ConnectionReset
+        finally:
+            hub.unregister(q)
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -611,15 +732,28 @@ def main():
     p.add_argument("--push-port", type=int, default=9000, help="port HTTP servant les fichiers poussés")
     p.add_argument("--music", default="music", help="dossier des uploads")
     p.add_argument("--no-push", action="store_true", help="désactive le push DLNA")
+    p.add_argument("--no-gena", action="store_true",
+                   help="désactive les events GENA (volume/mute en push SSE)")
     args = p.parse_args()
 
-    global amp, push, music_dir
+    global amp, push, gena, music_dir
     amp = RN301(args.amp)
     music_dir = args.music
     if not args.no_push:
         push = PushServer(args.amp, serve_port=args.push_port)
         push.start()
         print(f"push DLNA: fichiers servis sur :{args.push_port} (uploads -> {music_dir}/)")
+    if not args.no_gena:
+        # Volume/mute instantanés : GENA RenderingControl -> hub -> SSE /api/events.
+        # Dégradé gracieux : si l'abonnement échoue, le polling 4 s suffit.
+        try:
+            gena = GenaClient(args.amp,
+                              on_error=lambda svc, msg: print(f"GENA {svc}: {msg}"))
+            gena.subscribe("RenderingControl", on_gena_event)
+            print("GENA: volume/mute en push (RenderingControl abonné)")
+        except Exception as e:
+            gena = None
+            print(f"GENA indisponible ({e}) — polling 4 s uniquement")
 
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"R-N301 web: http://localhost:{args.port}  (ampli: {args.amp})")
@@ -627,6 +761,11 @@ def main():
         srv.serve_forever()
     except KeyboardInterrupt:
         print("\nbye")
+    finally:
+        if gena is not None:
+            gena.close()
+        if push is not None:
+            push.close()
 
 
 if __name__ == "__main__":
