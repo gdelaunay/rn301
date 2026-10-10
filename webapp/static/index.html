@@ -166,6 +166,17 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:2px solid var(
 .list .li.sel{background:var(--active-bg);color:var(--ink);font-weight:600}
 .list .li.un{color:var(--ink-subtle);cursor:default}
 .list .li.un:hover{background:none}
+/* Navigateur en chargement : la carte RESTE affichée avec son contenu précédent.
+   La masquer (Menu_Status='Busy' le temps que l'ampli charge) supprimait ~300 px
+   de hauteur → la page remontait à chaque clic, puis redescendait. Contenu grisé
+   + non cliquable, spinner dans l'en-tête. */
+#listcard.busy .list,#listcard.busy .row button{opacity:.45;pointer-events:none}
+.spin{display:none;width:13px;height:13px;margin-left:7px;vertical-align:-2px;
+  border:2px solid var(--border-strong);border-top-color:var(--primary);
+  border-radius:50%;animation:spin .7s linear infinite}
+#listcard.busy .spin{display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:2s}}
 
 /* inputs divers */
 input[type=number],input[type=url],input[type=file]{height:auto;padding:8px 10px;width:auto}
@@ -302,15 +313,15 @@ button.pwr,#btnPlay{height:40px;min-width:46px}
 
   <div class="card" id="listcard" style="display:none">
     <div class="row" style="justify-content:space-between">
-      <span class="eyebrow">Navigateur</span>
+      <span class="eyebrow">Navigateur<i class="spin" aria-hidden="true"></i></span>
       <span class="chip" id="menuname"></span>
     </div>
     <div class="list" id="menu"></div>
     <div class="row">
-      <button aria-label="Retour" title="Retour" onclick="api('cursor',{dir:'Return'})"><i class="msi">arrow_back</i></button>
-      <button aria-label="Monter" title="Monter" onclick="api('cursor',{dir:'Up'})"><i class="msi">arrow_upward</i></button>
-      <button aria-label="Descendre" title="Descendre" onclick="api('cursor',{dir:'Down'})"><i class="msi">arrow_downward</i></button>
-      <button aria-label="Sélectionner" title="Sélectionner" onclick="api('cursor',{dir:'Sel'})"><i class="msi">check</i></button>
+      <button aria-label="Retour" title="Retour" onclick="nav('cursor',{dir:'Return'})"><i class="msi">arrow_back</i></button>
+      <button aria-label="Monter" title="Monter" onclick="nav('cursor',{dir:'Up'})"><i class="msi">arrow_upward</i></button>
+      <button aria-label="Descendre" title="Descendre" onclick="nav('cursor',{dir:'Down'})"><i class="msi">arrow_downward</i></button>
+      <button aria-label="Sélectionner" title="Sélectionner" onclick="nav('cursor',{dir:'Sel'})"><i class="msi">check</i></button>
     </div>
   </div>
 
@@ -352,6 +363,7 @@ button.pwr,#btnPlay{height:40px;min-width:46px}
 
 <script>
 let state={}, band='FM', shuffle=false, repeat='Off', playing=false, pushMode=false;
+let listEver=false, listBusySince=0, listRetry=null, listGaveUp=false;   // navigateur
 /* Mapping source (Input_Sel / liste des entrées) -> nom d'icône Material Symbols.
    Clés en MAJUSCULES ; srcIcon normalise. Repli 'input' si source inconnue. */
 const SRC_ICON={'SPOTIFY':'graphic_eq','NET RADIO':'podcasts','SERVER':'library_music','AIRPLAY':'cast','TUNER':'radio','CD':'album','OPTICAL':'sensors','COAXIAL':'cable','LINE1':'settings_input_component','LINE2':'settings_input_component','LINE3':'settings_input_component','PUSH':'cloud_upload'};
@@ -559,6 +571,97 @@ function renderSources(s){
   });
 }
 
+/* --- Navigateur (SERVER / NET RADIO) -------------------------------------
+   Règle : la carte ne disparaît JAMAIS entre deux niveaux de menu. Tant que
+   l'ampli charge (Menu_Status='Busy', ou list_info null), on garde le contenu
+   précédent, grisé + spinner, et on ré-interroge légèrement (POST /api/list =
+   1 seul GET YNC, pas un full_state) jusqu'à ce que le menu soit Ready.
+   D'où : pas de trou dans la hauteur de la page, donc pas de saut de scroll. */
+const LIST_BUSY_MAX=8000;      // au-delà : le menu ne reviendra pas, on lâche
+function setListBusy(on){
+  const lc=document.getElementById('listcard');
+  if(on){ if(!listBusySince)listBusySince=Date.now(); }
+  else { listBusySince=0; clearTimeout(listRetry); listRetry=null; }
+  const stuck=on&&Date.now()-listBusySince>LIST_BUSY_MAX;
+  if(stuck)listGaveUp=true;                 // sinon le render d'après relance un cycle de 8 s
+  lc.classList.toggle('busy',on&&!stuck);
+  lc.setAttribute('aria-busy',(on&&!stuck)?'true':'false');
+  if(on&&!stuck&&!listRetry)listRetry=setTimeout(pollList,350);
+  return !stuck;
+}
+/* Peint un menu Ready ; renvoie false si ce n'est pas prêt (contenu laissé tel quel). */
+function paintList(li){
+  if(!(li&&li.menu_status==='Ready'&&li.lines&&li.lines.length))return false;
+  listEver=true; listGaveUp=false;
+  document.getElementById('menuname').textContent=li.menu_name||('niveau '+li.menu_layer);
+  const menu=document.getElementById('menu'); menu.innerHTML='';
+  const cur=parseInt(li.cursor_line||'0');
+  li.lines.forEach(l=>{
+    if(!l.txt&&l.attribute==='Unselectable')return;
+    const d=document.createElement('div');
+    d.className='li'+(l.line===cur?' sel':'')+(l.attribute==='Unselectable'?' un':'');
+    d.textContent=(l.line===cur?'▸ ':'')+l.txt;
+    if(l.attribute!=='Unselectable')d.onclick=()=>nav('line',{n:l.line});
+    menu.appendChild(d);
+  });
+  setListBusy(false);
+  return true;
+}
+/* Clic dans le menu : grisé immédiat (avant même la réponse réseau).
+   /api/line, /api/cursor et /api/page renvoient maintenant une réponse LÉGÈRE
+   {ok, source, list} (1 PUT + 1 GET List_Info) au lieu du full_state() du
+   wrapper (6-8 GET YNC, ~1 s) → le menu revient vite, et rien d'autre ne bouge
+   dans la page pendant la navigation. La source est passée explicitement : le
+   serveur n'a pas à relire Input_Sel. L'état complet (now playing…) est
+   resynchronisé UNE fois, en différé, quand le menu s'est stabilisé.
+   norefresh=true : la réponse ne porte plus de `state`, rien à render. */
+function nav(action,body){
+  listGaveUp=false;                        // un nouveau clic relance un cycle
+  setListBusy(true);
+  if(state.input&&!body.source)body.source=state.input;
+  return api(action,body,true).then(function(j){
+    if(j&&j.list&&paintList(j.list))queueFullRefresh();
+    return j;
+  });
+}
+/* Un seul full_state() par navigation (debounce), en arrière-plan : la réponse
+   légère ne contient plus l'état complet, il faut bien recaler le « now playing »
+   après avoir choisi une piste — mais pas à chaque clic ni à chaque relance. */
+let fullRefreshTimer=null;
+function queueFullRefresh(){clearTimeout(fullRefreshTimer);fullRefreshTimer=setTimeout(refresh,700);}
+/* Relance légère pendant un chargement : /api/list ne fait qu'UN GET YNC.
+   Chaîne .then (et pas async/await) : comportement identique dans le
+   navigateur, mais testable sur l'horloge virtuelle du harnais. */
+function pollList(){
+  listRetry=null;
+  if(!listBusySince)return;
+  if(Date.now()-listBusySince>LIST_BUSY_MAX){listGaveUp=true;setListBusy(false);return;}   // abandon net
+  const again=function(ms){listRetry=setTimeout(pollList,ms);};
+  const done=function(j){ if(j&&paintList(j.list))queueFullRefresh(); else again(450); };
+  try{
+    fetch('/api/list',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({source:state.input})})
+      .then(function(r){return r.json();})
+      .then(done,function(){again(700);});
+  }catch(_){again(700);}
+}
+
+/* Visibilité/état de la carte : extraite de render() pour être testable telle
+   quelle. La carte ne se masque que si on quitte la liste (source, push, veille)
+   ou si le chargement a dépassé LIST_BUSY_MAX — jamais entre deux niveaux. */
+function syncListCard(s,on,inp){
+  const lc=document.getElementById('listcard');
+  const listSrc=['SERVER','NET RADIO'].includes((inp||'').toUpperCase());
+  if(on&&!pushMode&&listSrc){
+    const ready=paintList(s.list_info);    // d'abord : un menu Ready l'emporte toujours
+    if(ready||(listEver&&!listGaveUp&&setListBusy(true)))lc.style.display='';
+    else { lc.style.display='none'; listEver=false; setListBusy(false); }
+  }else{
+    lc.style.display='none';
+    listEver=false; listGaveUp=false; setListBusy(false);
+  }
+}
+
 function render(s,ts){
   // un état partiel (amorçage) ne doit jamais écraser un état complet déjà reçu
   if(s.partial&&state&&!state.partial&&state.power)return;
@@ -618,23 +721,8 @@ function render(s,ts){
     if(!ps2.children.length){for(let n=1;n<=8;n++){const b=document.createElement('button');b.textContent=n;b.onclick=()=>api('tuner',{op:'preset',n});ps2.appendChild(b);}}
   } else tc.style.display='none';
 
-  // navigateur liste SERVER / NET RADIO
-  const lc=document.getElementById('listcard');
-  const li=s.list_info;
-  if(on&&!pushMode&&li&&li.menu_status==='Ready'&&li.lines&&li.lines.length){
-    lc.style.display='';
-    document.getElementById('menuname').textContent=li.menu_name||('niveau '+li.menu_layer);
-    const menu=document.getElementById('menu'); menu.innerHTML='';
-    const cur=parseInt(li.cursor_line||'0');
-    li.lines.forEach(l=>{
-      if(!l.txt&&l.attribute==='Unselectable')return;
-      const d=document.createElement('div');
-      d.className='li'+(l.line===cur?' sel':'')+(l.attribute==='Unselectable'?' un':'');
-      d.textContent=(l.line===cur?'▸ ':'')+l.txt;
-      if(l.attribute!=='Unselectable')d.onclick=()=>api('line',{n:l.line});
-      menu.appendChild(d);
-    });
-  } else lc.style.display='none';
+  // navigateur liste SERVER / NET RADIO (règle dans syncListCard)
+  syncListCard(s,on,inp);
 
   // push (carte visible seulement en mode push)
   document.getElementById('pushcard').style.display=(on&&pushMode)?'':'none';

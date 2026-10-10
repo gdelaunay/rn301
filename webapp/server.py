@@ -346,6 +346,23 @@ class Handler(BaseHTTPRequestHandler):
                 remaining -= len(chunk)
         self._json({"ok": True, "path": os.path.abspath(dest), "name": name})
 
+    def _nav(self, body: dict, action) -> dict:
+        """Navigation dans le menu : réponse LÉGÈRE (1 PUT + 1 GET List_Info).
+
+        Le wrapper générique renverrait full_state() (6-8 GET YNC séquentiels,
+        ~1 s) à chaque clic sur une ligne du navigateur. L'UI n'a besoin que du
+        menu : elle garde l'ancien contenu grisé et ré-interroge /api/list tant
+        que Menu_Status != 'Ready'. Pas de clé "state" → pas de re-render complet
+        (donc pas de cartes qui bougent pendant la navigation).
+        """
+        src = body.get("source") or amp.get_input()
+        action(src)
+        try:
+            lst = amp.list_info(src)
+        except YNCError:
+            lst = None                      # menu pas encore prêt : l'UI relance
+        return {"ok": True, "source": src, "list": lst}
+
     def dispatch(self, path: str, body: dict):
         """Une route = une commande documentée. Retourne dict brut ou None (+state)."""
         match path:
@@ -387,13 +404,18 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     amp.set_repeat(src, body.get("value", "Off"))
             case "/api/list":
-                return {"ok": True, "list": amp.list_info(body.get("source", amp.get_input()))}
+                src = body.get("source") or amp.get_input()
+                try:
+                    lst = amp.list_info(src)
+                except YNCError:
+                    lst = None          # menu pas prêt : l'UI relance d'elle-même
+                return {"ok": True, "source": src, "list": lst}
             case "/api/cursor":
-                amp.cursor(body.get("source", amp.get_input()), body.get("dir", "Down"))
+                return self._nav(body, lambda src: amp.cursor(src, body.get("dir", "Down")))
             case "/api/page":
-                amp.page(body.get("source", amp.get_input()), body.get("dir", "Down"))
+                return self._nav(body, lambda src: amp.page(src, body.get("dir", "Down")))
             case "/api/line":
-                amp.select_line(body.get("source", amp.get_input()), int(body["n"]))
+                return self._nav(body, lambda src: amp.select_line(src, int(body["n"])))
             case "/api/jump":
                 # non supporté par le firmware (HTTP 400) — conservé pour mémoire
                 amp.jump_line(body.get("source", amp.get_input()), int(body["line"]))

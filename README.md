@@ -188,10 +188,15 @@ touches IR.
 | `/api/input` | `{val:"SERVER"}` | changement de source |
 | `/api/playback` | `{action:"Play", source?}` | Play/Stop/Pause/Skip Fwd/Skip Rev |
 | `/api/playmode` | `{what:"shuffle"\|"repeat", value}` | modes de lecture |
-| `/api/list` | `{source?}` | menu de navigation brut |
-| `/api/cursor` | `{dir:"Down"}` | Up/Down/Left/Right/Sel/Return |
-| `/api/page` | `{dir:"Down"}` | pagination |
-| `/api/line` | `{n:4}` | sélection directe Line_1..8 |
+| `/api/list` | `{source?}` | menu de navigation brut → `{ok, source, list}` (1 GET YNC ; `list:null` si le menu n'est pas prêt) |
+| `/api/cursor` | `{dir:"Down", source?}` | Up/Down/Left/Right/Sel/Return |
+| `/api/page` | `{dir:"Down", source?}` | pagination |
+| `/api/line` | `{n:4, source?}` | sélection directe Line_1..8 |
+
+> `/api/list`, `/api/cursor`, `/api/page` et `/api/line` renvoient une réponse
+> **légère** `{ok, source, list}` (1 PUT + 1 GET `List_Info`) et non l'état
+> agrégé : la navigation dans le menu reste fluide et l'UI garde son contenu
+> précédent grisé pendant que l'ampli charge (`Menu_Status: Busy`).
 | `/api/tuner` | `{op:"tune"\|"band"\|"step"\|"preset"\|"preset_step", ...}` | tout le tuner |
 | `/api/netstandby` | `{on:bool}` ou `{}` | set / toggle |
 | `/api/netname` | `{name}` | nom réseau |
