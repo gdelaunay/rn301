@@ -117,7 +117,7 @@ a{color:var(--link)}
 button,select,input{font:inherit;color:var(--ink)}
 button,select,input:not([type=range]):not([type=file]){height:var(--control-h);
   padding:0 12px;border:var(--hairline) solid var(--border);border-radius:var(--radius);
-  background:var(--bg-elevated);cursor:pointer;
+  background:var(--bg-elevated);
   transition:background-color var(--speed) ease-out,border-color var(--speed) ease-out,color var(--speed) ease-out}
 button{background:var(--bg-surface)}
 button:hover:not(:disabled){background:var(--bg-elevated);border-color:var(--border-strong)}
@@ -152,6 +152,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:2px solid var(
 .chip{display:inline-block;padding:1px 7px;border:var(--hairline) solid currentColor;
   border-radius:var(--radius);font:500 10px/1.4 var(--font-mono);letter-spacing:.06em;color:var(--ink-subtle)}
 .chip.on{color:var(--success);border-color:var(--success)}
+.chip.err{color:var(--error);border-color:var(--error)}
 
 /* now playing */
 .now{display:flex;gap:12px;align-items:center}
@@ -212,6 +213,18 @@ input[type=file]{padding:6px;background:var(--bg-elevated);font-size:.85rem}
 /* details systeme */
 details summary{cursor:pointer;color:var(--ink-subtle);font:500 11px/1 var(--font-mono);letter-spacing:.1em;text-transform:uppercase}
 details[open] summary{margin-bottom:12px}
+
+/* sections repliables du main : <details class="sect">. Le chevron passe à
+   DROITE, aligné sur le titre (flex space-between), et pivote à l'ouverture.
+   Le marker natif est masqué. Tout le contenu hors <summary> forme le corps. */
+.sect>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;list-style:none}
+.sect>summary::-webkit-details-marker{display:none}
+.sect>summary::marker{content:''}
+.sect-h{display:flex;align-items:center;gap:8px;min-width:0}
+.sect .chev{flex:0 0 auto;font-size:20px;color:var(--ink-subtle);
+  transition:transform var(--speed) ease-out}
+.sect[open] .chev{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){.sect .chev{transition:none}}
 
 /* theme toggle : 3 etats, icon seule */
 .theme-toggle{width:var(--control-h);padding:0;display:inline-grid;align-items:center;justify-items:center}
@@ -317,15 +330,15 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
   </div>
 
   <div class="card">
-    <div class="lbl eyebrow">Source</div>
+    <details class="sect" open>
+      <summary><span class="sect-h"><span class="eyebrow">Source</span></span><i class="msi chev" aria-hidden="true">expand_more</i></summary>
     <div class="row" id="sources"></div>
+    </details>
   </div>
 
   <div class="card" id="nowcard" style="display:none">
-    <div class="row" style="justify-content:space-between">
-      <span class="eyebrow">Lecture</span>
-      <span class="chip" id="playstate"></span>
-    </div>
+    <details class="sect" open>
+      <summary><span class="sect-h"><span class="eyebrow">Lecture</span><span class="chip" id="playstate"></span></span><i class="msi chev" aria-hidden="true">expand_more</i></summary>
     <div class="now">
       <img id="art" style="display:none" alt="">
       <i class="msi artph" id="artph" aria-hidden="true">music_note</i>
@@ -343,13 +356,12 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
       <button id="btnShuffle" aria-label="Aléatoire" title="Aléatoire" onclick="api('playmode',{what:'shuffle',value:shuffleNext()})"><i class="msi">shuffle</i></button>
       <button id="btnRepeat" aria-label="Répéter" title="Répéter" onclick="api('playmode',{what:'repeat',value:repeatNext()})"><i class="msi" id="repeatIcon">repeat</i></button>
     </div>
+    </details>
   </div>
 
   <div class="card" id="tunercard" style="display:none">
-    <div class="row" style="justify-content:space-between">
-      <span class="eyebrow">Tuner</span>
-      <span class="chip" id="tunerinfo"></span>
-    </div>
+    <details class="sect" open>
+      <summary><span class="sect-h"><span class="eyebrow">Tuner</span><span class="chip" id="tunerinfo"></span></span><i class="msi chev" aria-hidden="true">expand_more</i></summary>
     <div class="row">
       <button aria-label="Descendre" title="Descendre" onclick="api('tuner',{op:'step',band:band,dir:'Down'})"><i class="msi">caret_left</i></button>
       <select id="bandsel" onchange="band=this.value;refresh()"><option>FM</option><option>AM</option></select>
@@ -359,13 +371,12 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
       <button aria-label="Accorder" title="Accorder" onclick="api('tuner',{op:'tune',band:band,freq:document.getElementById('freq').value})"><i class="msi">tune</i></button>
     </div>
     <div class="row" id="presets"></div>
+    </details>
   </div>
 
   <div class="card" id="listcard" style="display:none">
-    <div class="row" style="justify-content:space-between">
-      <span class="eyebrow">Navigateur<i class="spin" aria-hidden="true"></i></span>
-      <span class="chip" id="menuname"></span>
-    </div>
+    <details class="sect" open>
+      <summary><span class="sect-h"><span class="eyebrow">Navigateur<i class="spin" aria-hidden="true"></i></span><span class="chip" id="menuname"></span></span><i class="msi chev" aria-hidden="true">expand_more</i></summary>
     <div class="list" id="menu"></div>
     <div class="row">
       <button aria-label="Retour" title="Retour" onclick="nav('cursor',{dir:'Return'})"><i class="msi">arrow_back</i></button>
@@ -373,13 +384,12 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
       <button aria-label="Descendre" title="Descendre" onclick="nav('cursor',{dir:'Down'})"><i class="msi">arrow_downward</i></button>
       <button aria-label="Sélectionner" title="Sélectionner" onclick="nav('cursor',{dir:'Sel'})"><i class="msi">check</i></button>
     </div>
+    </details>
   </div>
 
   <div class="card" id="pushcard" style="display:none">
-    <div class="row" style="justify-content:space-between">
-      <span class="eyebrow">Mode Push — audio du navigateur</span>
-      <span class="chip" id="pushstate"></span>
-    </div>
+    <details class="sect" open>
+      <summary><span class="sect-h"><span class="eyebrow">Mode Push — audio du navigateur</span><span class="chip" id="pushstate"></span></span><i class="msi chev" aria-hidden="true">expand_more</i></summary>
     <div class="row">
       <input type="file" id="pushfile" accept=".wav,.wave,.mp3,.flac,.fla,.wma,.asf,.m4a,.mp4,.aac,.3gp,.3g2,.ogg,.opus" style="flex:1;min-width:0">
       <button aria-label="Envoyer le fichier" title="Envoyer le fichier" onclick="pushFile()"><i class="msi">cloud_upload</i></button>
@@ -388,11 +398,12 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
       <input type="url" id="pushurl" placeholder="http://… (webradio MP3, NAS…)">
       <button aria-label="Lire l'URL" title="Lire l'URL" onclick="api('push',{url:document.getElementById('pushurl').value})"><i class="msi fill">play_arrow</i></button>
     </div>
+    </details>
   </div>
 
   <div class="card">
-    <details>
-      <summary>Système</summary>
+    <details class="sect">
+      <summary><span class="sect-h"><span class="eyebrow">Système</span></span><i class="msi chev" aria-hidden="true">expand_more</i></summary>
       <div class="row">
         <button id="btnNetStdby" onclick="api('netstandby',{},true)">Network Standby</button>
         <span class="chip" id="netname"></span>
@@ -422,7 +433,7 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
         <span class="chip" id="discState"></span>
       </div>
       <div class="row">
-        <input type="text" id="manualHost" placeholder="IP manuelle (ex. 192.168.1.91)" inputmode="numeric" style="flex:1;min-width:0">
+        <input type="text" id="manualHost" placeholder="IP manuelle (ex. 192.168.1.91)" inputmode="decimal" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;cursor:text">
         <button onclick="bindManual()"><i class="msi">link</i>&nbsp;Bind</button>
       </div>
     </div>
@@ -705,11 +716,17 @@ function goHome(){                      // titre (et toute sortie) → vue norma
   $('viewHelp').style.display='none';
   const b=$('btnHelp'); b.classList.remove('on'); b.classList.remove('notif');
 }
+/* chip statut de la carte Connexion : kind = 'on' (succès) | 'err' | '' (neutre/pending) */
+function setDiscState(text, kind){
+  const c=$('discState'); if(!c) return;
+  c.textContent=text||'';
+  c.classList.toggle('on',kind==='on');
+  c.classList.toggle('err',kind==='err');
+}
 /* état courant affiché dans la carte Connexion (host bindé ou erreur) */
 function refreshHelpState(){
-  const c=$('discState');
-  if(ampError){ c.textContent=ampErrorText||'injoignable'; c.classList.remove('on'); }
-  else { c.textContent=ampHost?('connecté · '+ampHost):'connecté'; c.classList.add('on'); }
+  if(ampError) setDiscState(ampErrorText||'injoignable','err');
+  else setDiscState(ampHost?('connecté · '+ampHost):'connecté','on');
   const av=$('aboutVer');
   if(av) av.textContent=(state&&state.model)
     ? `Ampli : ${state.model}${state.version?' · v'+state.version:''}`
@@ -717,20 +734,20 @@ function refreshHelpState(){
 }
 
 async function rediscover(){
-  const c=$('discState'); c.textContent='scan…'; c.classList.remove('on');
+  setDiscState('scan…','');
   const r=await postRediscover({});
-  if(r&&r.ok){ ampHost=r.host||ampHost; c.textContent=(r.friendly_name||r.model||r.host||'trouvé'); c.classList.add('on');
+  if(r&&r.ok){ ampHost=r.host||ampHost; setDiscState(r.friendly_name||r.model||ampHost||'trouvé','on');
     clearAmpError(); setHelpNotif(false); toast('Ampli '+(r.host?'bindé @ '+r.host:'redécouvert')); refresh(); }
-  else if(r){ c.textContent=r.error||'échec'; setHelpNotif(true); }
+  else { setDiscState((r&&r.error)||'échec','err'); setHelpNotif(true); }
 }
 async function bindManual(){
   const host=($('manualHost').value||'').trim();
   if(!host){ toast('Saisis une IP'); return; }
-  const c=$('discState'); c.textContent='bind…'; c.classList.remove('on');
+  setDiscState('bind…','');
   const r=await postRediscover({host});
-  if(r&&r.ok){ ampHost=r.host||host; c.textContent=ampHost; c.classList.add('on');
+  if(r&&r.ok){ ampHost=r.host||host; setDiscState(ampHost,'on');
     clearAmpError(); setHelpNotif(false); toast('Bindé @ '+ampHost); refresh(); }
-  else if(r){ c.textContent=r.error||'échec'; setHelpNotif(true); }
+  else { setDiscState((r&&r.error)||'échec','err'); setHelpNotif(true); }
 }
 /* POST /api/rediscover (SSDP ou {host}) ; renvoie le JSON ou null. Ne passe pas
    par api() : cette route est hors du dispatch état et peut répondre 503/502
