@@ -442,16 +442,28 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": True, "state": self.full_state()})
 
     def handle_rediscover(self):
-        """Relance un scan SSDP et re-bound amp/push/gena si un ampli répond.
+        """Re-bound amp/push/gena : scan SSDP, ou IP manuelle si `host` fourni.
 
-        Préparé pour la future page Réglages/Infos ; pas de bouton UI pour
-        l'instant — déclenchable via `fetch('/api/rediscover',{method:'POST'})`.
+        Body optionnel {"host": "1.2.3.4"} → bind direct sur cette IP (testé
+        par un basic_status) sans passer par la découverte. Sans body : scan
+        SSDP via la lib. Déclenché par la carte « Connexion » de la vue Aide.
 
         Note : `_bind_amp` réécrit les globaux amp/push/gena sans lock. Un
         rediscover lancé pendant un polling peut faire lire à un thread une
         instance en cours de fermeture ; acceptable pour un outil LAN
         mono-utilisateur, à protéger si l'usage se multiplie.
         """
+        manual = (self._body().get("host") or "").strip()
+        if manual:
+            _bind_amp(manual)
+            try:
+                amp.basic_status()          # valide que l'IP répond vraiment
+            except YNCError as e:
+                self._json({"ok": False, "host": manual,
+                            "error": f"bindé sur {manual} mais ampli injoignable : {e}"}, 502)
+                return
+            self._json({"ok": True, "found": True, "manual": True, "host": manual})
+            return
         try:
             found = discover_one()
         except DiscoverError as e:
