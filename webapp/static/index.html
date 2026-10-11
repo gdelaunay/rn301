@@ -400,6 +400,19 @@ function srcIconCls(v){return SRC_ICON_ROT.has((v||'').trim().toUpperCase())?' r
 const SRC_ORDER=['TUNER','CD','OPTICAL','COAXIAL','LINE1','LINE2','LINE3','SPOTIFY','SERVER','NET RADIO','AIRPLAY'];
 function srcRank(v){const i=SRC_ORDER.indexOf((v||'').trim().toUpperCase());return i<0?SRC_ORDER.length:i;}
 function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+/* Pochette d'album. src n'est réassigné QUE si l'URL a changé : render() tourne à
+   chaque polling (~2,5 s) et une image en erreur n'est pas mise en cache par le
+   navigateur → réassigner la même URL morte refaisait un GET à chaque tour
+   (l'icône « flashait » en image cassée). L'URL en échec est mémorisée dans
+   dataset.url : on la masque et on n'y revient plus tant qu'elle ne change pas. */
+function setArt(img,url){
+  if(!url){img.dataset.url='';img.style.display='none';return;}
+  if(img.dataset.url===url)return;
+  img.dataset.url=url;
+  img.onload=()=>{img.style.display='';};
+  img.onerror=()=>{img.style.display='none';};
+  img.src=url;
+}
 
 function enterPush(){pushMode=true;api('input',{val:'SERVER'});}
 function exitPush(v){pushMode=false;api('input',{val:v});}
@@ -781,9 +794,16 @@ function render(s,ts){
     document.getElementById('npTitle').textContent=m.song||m.station||'—';
     document.getElementById('npSub').textContent=[m.artist,m.album].filter(Boolean).join(' · ');
     document.getElementById('playstate').textContent=pi.playback||'';
-    const art=document.getElementById('art');
-    if(pi.album_art){art.src='/art?url='+encodeURIComponent(pi.album_art);art.style.display='';}
-    else art.style.display='none';
+    /* Pochette : en push, l'ampli ne relaie PAS la couverture intégrée du fichier
+       (Album_ART/URL reste son propre /YamahaRemoteControl/AlbumART/AlbumART.ymf) →
+       on sert directement celle extraite du fichier par la lib (/pushart, déjà
+       présent côté serveur). push_meta.cover vient de last_meta (booléen).
+       Clé de cache = titre/artiste/album : l'URI DLNA poussée est toujours
+       /audio/1/, elle ne changerait pas d'un fichier à l'autre. */
+    const pm=s.push_meta||{};
+    setArt(document.getElementById('art'),
+      pushMode&&pm.cover?'/pushart?v='+encodeURIComponent([pm.title,pm.artist,pm.album].join('|'))
+                        :pi.album_art?'/art?url='+encodeURIComponent(pi.album_art):'');
     if(pi.shuffle!==undefined){shuffle=pi.shuffle==='On';document.getElementById('btnShuffle').classList.toggle('on',shuffle);}
     if(pi.repeat!==undefined){repeat=pi.repeat;document.getElementById('btnRepeat').classList.toggle('on',repeat!=='Off');document.getElementById('repeatIcon').textContent=repeat==='One'?'repeat_one':'repeat';}
   } else { nc.style.display='none'; noteNowPlaying(null,false); }
