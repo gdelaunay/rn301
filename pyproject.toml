@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,20 +8,29 @@ dynamic = ["version"]
 description = "Contrôle complet de l'ampli hi-fi Yamaha R-N301 : protocole YNC, push DLNA (MediaRenderer :8080), eventing GENA, découverte SSDP — obtenu par reverse engineering de l'app officielle, validé en live. 100 % stdlib, zéro dépendance."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "gdelaunay", email = "admin@gdelaunay.fr" }]
 keywords = ["yamaha", "r-n301", "ync", "upnp", "dlna", "gena", "ssdp", "hifi", "remote-control"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Home Automation",
     "Topic :: Multimedia :: Sound/Audio :: Players",
     "Typing :: Typed",
 ]
+
+[project.urls]
+Homepage = "https://github.com/gdelaunay/rn301"
+Documentation = "https://github.com/gdelaunay/rn301#readme"
+Repository = "https://github.com/gdelaunay/rn301"
+Issues = "https://github.com/gdelaunay/rn301/issues"
+Changelog = "https://github.com/gdelaunay/rn301/blob/main/CHANGELOG.md"
 
 [project.scripts]
 rn301-discover = "rn301.discover:_main"
