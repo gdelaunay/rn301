@@ -412,16 +412,27 @@ function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>
    chaque polling (~2,5 s) et une image en erreur n'est pas mise en cache par le
    navigateur → réassigner la même URL morte refaisait un GET à chaque tour
    (l'icône « flashait » en image cassée). L'URL en échec est mémorisée dans
-   dataset.url : on la masque et on n'y revient plus tant qu'elle ne change pas. */
-function setArt(img,url){
+   dataset.url : on la masque et on n'y revient plus tant qu'elle ne change pas.
+   track = y a-t-il vraiment une piste (lecture ou métadonnées) : sans ça, carte
+   à l'arrêt, le placeholder n'a pas lieu d'être — il ne remplace qu'une pochette
+   absente, pas l'absence de lecture. */
+function setArt(img,url,track){
   const ph=document.getElementById('artph');
-  const show=on=>{img.style.display=on?'':'none';if(ph)ph.style.display=on?'none':'';};
-  if(!url){img.dataset.url='';show(false);return;}
-  if(img.dataset.url===url)return;
-  img.dataset.url=url;
-  img.onload=()=>show(true);
-  img.onerror=()=>show(false);
-  img.src=url;
+  /* dataset.ok = l'image a chargé. paint() est rappelé à CHAQUE render (pas
+     seulement quand l'URL change) : l'arrêt de la lecture doit masquer le
+     placeholder même si l'URL, elle, n'a pas bougé. */
+  const paint=()=>{const ok=img.dataset.ok==='1';
+    img.style.display=ok?'':'none';
+    if(ph)ph.style.display=(!ok&&track)?'':'none';};
+  if(img.dataset.url!==url){
+    img.dataset.url=url; img.dataset.ok='';
+    if(url){
+      img.onload=()=>{img.dataset.ok='1';paint();};
+      img.onerror=()=>{img.dataset.ok='';paint();};
+      img.src=url;
+    }
+  }
+  paint();
 }
 
 function enterPush(){pushMode=true;api('input',{val:'SERVER'});}
@@ -811,9 +822,11 @@ function render(s,ts){
        Clé de cache = titre/artiste/album : l'URI DLNA poussée est toujours
        /audio/1/, elle ne changerait pas d'un fichier à l'autre. */
     const pm=s.push_meta||{};
+    const track=playing||!!(m.song||m.station||m.artist||m.album);
     setArt(document.getElementById('art'),
       pushMode&&pm.cover?'/pushart?v='+encodeURIComponent([pm.title,pm.artist,pm.album].join('|'))
-                        :pi.album_art?'/art?url='+encodeURIComponent(pi.album_art):'');
+                        :pi.album_art?'/art?url='+encodeURIComponent(pi.album_art):'',
+      track);
     if(pi.shuffle!==undefined){shuffle=pi.shuffle==='On';document.getElementById('btnShuffle').classList.toggle('on',shuffle);}
     if(pi.repeat!==undefined){repeat=pi.repeat;document.getElementById('btnRepeat').classList.toggle('on',repeat!=='Off');document.getElementById('repeatIcon').textContent=repeat==='One'?'repeat_one':'repeat';}
   } else { nc.style.display='none'; noteNowPlaying(null,false); }
