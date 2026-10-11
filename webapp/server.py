@@ -30,6 +30,7 @@ push: PushServer | None = None
 gena: GenaClient | None = None
 music_dir: str = "music"
 amp_host: str = ""
+discovering: bool = False    # True tant que le scan SSDP de fond n'a pas abouti
 # Config de binding, posée une fois par main() puis relue par /api/rediscover.
 # Valeurs explicites (pas le namespace argparse) pour éviter de coupler
 # _bind_amp à argparse et de dupliquer ses defaults.
@@ -41,6 +42,14 @@ _NO_AMP = {
     "error": "aucun ampli Yamaha R-N301 découvert sur le réseau",
     "code": "no_discovery",
     "hint": "Allume-le, vérifie qu'il est sur le même sous-réseau, puis POST /api/rediscover.",
+}
+
+# Scan de fond en cours : pas encore d'échec, l'UI affiche un état « recherche »
+# neutre (pas de badge d'erreur, pas de toast) en attendant le premier bind.
+_DISCOVERING = {
+    "error": "recherche de l'ampli en cours…",
+    "code": "discovering",
+    "hint": "Découverte SSDP en arrière-plan, veuillez patienter.",
 }
 
 
@@ -170,6 +179,11 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj, ensure_ascii=False).encode(), "application/json; charset=utf-8")
 
+    def _send_no_amp(self):
+        """503 « pas d'ampli » : état « recherche » neutre pendant le scan de
+        fond, erreur no_discovery une fois le scan terminé sans résultat."""
+        self._json(_DISCOVERING if discovering else _NO_AMP, 503)
+
     _ASSET_TYPES = {".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf",
                     ".otf": "font/otf", ".css": "text/css; charset=utf-8",
                     ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml",
@@ -262,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_asset(path[len("/assets/"):])
         elif path == "/api/state":
             if amp is None:
-                self._json(_NO_AMP, 503)
+                self._send_no_amp()
                 return
             try:
                 self._json({"state": self.full_state()})
@@ -275,7 +289,7 @@ class Handler(BaseHTTPRequestHandler):
             # Les cartes riches (now playing, tuner, liste, push) attendent
             # /api/state : elles dépendent de play_info/list_info.
             if amp is None:
-                self._json(_NO_AMP, 503)
+                self._send_no_amp()
                 return
             try:
                 st = amp.basic_status()
@@ -301,7 +315,7 @@ class Handler(BaseHTTPRequestHandler):
             # La source est passée par le client (il la connaît) : pas de GET
             # Input_Sel supplémentaire. Réponse = mêmes clés que full_state().
             if amp is None:
-                self._json(_NO_AMP, 503)
+                self._send_no_amp()
                 return
             src = (parse_qs(urlparse(self.path).query).get("source") or [""])[0]
             out: dict = {"ok": True, "now": True}
@@ -326,7 +340,7 @@ class Handler(BaseHTTPRequestHandler):
             self.sse_stream()
         elif path == "/api/inputs":
             if amp is None:
-                self._json(_NO_AMP, 503)
+                self._send_no_amp()
                 return
             try:
                 self._json({"inputs": amp.list_inputs()})
@@ -334,7 +348,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": str(e)}, 502)
         elif path == "/api/config":
             if amp is None:
-                self._json(_NO_AMP, 503)
+                self._send_no_amp()
                 return
             try:
                 self._json(amp.system_config())
@@ -418,7 +432,7 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_upload()
             return
         if amp is None:
-            self._json(_NO_AMP, 503)
+            self._send_no_amp()
             return
         body = self._body()
         try:
@@ -665,19 +679,24 @@ def _discover_and_bind() -> None:
     puis le polling 4 s recolle dès que ce thread a bindé. Réutilise exactement
     la même chaîne que /api/rediscover (discover_one + _bind_amp).
     """
+    global discovering
+    discovering = True
     print("discovery SSDP en cours…", flush=True)
     try:
-        found = discover_one()
-    except DiscoverError as e:
-        found = None
-        print(f"discover : {e}")
-    if found:
-        label = found.get("friendly_name") or found.get("model") or "R-N301"
-        print(f"ampli découvert : {label} @ {found['host']}")
-        _bind_amp(found["host"])
-    else:
-        print("Aucun R-N301 Yamaha trouvé sur le réseau. "
-              "Allume-le puis passe /api/rediscover (ou relance le serveur).")
+        try:
+            found = discover_one()
+        except DiscoverError as e:
+            found = None
+            print(f"discover : {e}")
+        if found:
+            label = found.get("friendly_name") or found.get("model") or "R-N301"
+            print(f"ampli découvert : {label} @ {found['host']}")
+            _bind_amp(found["host"])
+        else:
+            print("Aucun R-N301 Yamaha trouvé sur le réseau. "
+                  "Allume-le puis passe /api/rediscover (ou relance le serveur).")
+    finally:
+        discovering = False    # le scan a abouti (bindé ou non) : fin de l'état neutre
 
 
 def main():
@@ -693,7 +712,7 @@ def main():
                    help="désactive les events GENA (volume/mute en push SSE)")
     args = p.parse_args()
 
-    global music_dir, no_push, no_gena, push_port
+    global music_dir, no_push, no_gena, push_port, discovering
     music_dir = args.music
     no_push = args.no_push
     no_gena = args.no_gena
@@ -726,8 +745,9 @@ def main():
     srv = _QuietServer((args.host, args.port), Handler)
     if not host:
         # Pas d'IP : le port HTTP est déjà ouvert (la page se charge en état
-        # « aucun ampli »), la découverte tourne en tâche de fond. Dès qu'elle
-        # binde l'ampli, le polling 4 s du front recolle tout seul.
+        # « recherche de l'ampli »), la découverte tourne en tâche de fond. Dès
+        # qu'elle binde l'ampli, le polling 4 s du front recolle tout seul.
+        discovering = True
         threading.Thread(target=_discover_and_bind, daemon=True).start()
     print(f"R-N301 web: http://localhost:{args.port}  (ampli: {host or 'discovery…'})")
     try:
