@@ -7,6 +7,25 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      # ruff bloquant : style/imports (config = [tool.ruff] du pyproject)
+      - name: Ruff (bloquant)
+        run: |
+          pip install ruff
+          ruff check .
+      # basedpyright INFORMATIF : on veut le signal mais pas bloquer le merge
+      # dessus (la stdlib non annotée génère du bruit même en mode basic).
+      - name: basedpyright (non bloquant)
+        continue-on-error: true
+        run: |
+          pip install basedpyright
+          basedpyright
   python:
     runs-on: ubuntu-latest
     strategy:

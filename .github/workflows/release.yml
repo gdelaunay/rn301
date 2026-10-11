@@ -25,6 +25,10 @@ jobs:
         with:
           python-version: "3.13"
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
       - name: Vérifier tag == __version__
         run: |
           ver="${GITHUB_REF_NAME#v}"
@@ -34,6 +38,13 @@ jobs:
             exit 1
           fi
           echo "version cohérente : $ver"
+
+      - name: Tests avant publication (gate)
+        run: |
+          pip install -e .
+          python -m unittest discover tests
+          node webapp/tests/list_ui.test.mjs
+          node webapp/tests/volume_ui.test.mjs
 
       - name: Build wheel + sdist
         run: |
