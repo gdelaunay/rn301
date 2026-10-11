@@ -5,7 +5,8 @@ et parfois une valeur (v9_1 = "..."). Ce script produit une table lisible.
 
 Usage: .venv/Scripts/python tools/extract_ops.py > docs/ops_brut.txt
 """
-import re, os
+import os
+import re
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(BASE, "apk", "decompiled", "src", "com", "yamaha", "npcontroller", "j", "q.java")

@@ -28,8 +28,8 @@ import os
 import re
 import socket
 import threading
-import urllib.request
 import urllib.error
+import urllib.request
 import xml.sax.saxutils as sx
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -86,6 +86,9 @@ class _FileHandler(BaseHTTPRequestHandler):
         # l'état servi (fichier, pochette) vit sur le FileServer (wrapper),
         # pas sur le ThreadingHTTPServer — d'où l'accès via .owner
         owner = getattr(self.server, "owner", None)
+        if owner is None:
+            self.send_error(404)
+            return
         # /albumart/… → pochette intégrée extraite du fichier poussé
         if self.path.startswith("/albumart"):
             data = owner.cover_data if owner else None
@@ -172,7 +175,7 @@ class FileServer:
         if self._httpd:
             return
         self._httpd = ThreadingHTTPServer((self.host, self.port), _FileHandler)
-        self._httpd.owner = self          # le handler lit l'état via .owner
+        self._httpd.owner = self          # le handler lit l'état via .owner  # pyright: ignore[reportAttributeAccessIssue]
         self.port = self._httpd.server_address[1]
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
@@ -263,7 +266,6 @@ def extract_tags(path: str) -> dict:
             if head[4:8] == b"ftyp":                             # MP4/M4A
                 f.seek(0)
                 data = f.read(1024 * 1024)                       # tags en début de fichier
-                ilst = data.find(b"\xa9nam")
                 out = {}
                 for atom, key in ((b"\xa9nam", "title"), (b"\xa9ART", "artist"), (b"\xa9alb", "album")):
                     p = data.find(atom)

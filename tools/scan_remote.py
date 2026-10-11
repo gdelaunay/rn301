@@ -16,7 +16,9 @@ Usage:
     .venv/Scripts/python tools/scan_remote.py --range 00-3F  # une plage
     .venv/Scripts/python tools/scan_remote.py --interactive  # demande un retour humain
 """
-import sys, time, json, argparse
+import argparse
+import json
+import time
 import urllib.request
 
 AMP = "http://192.168.1.91/YamahaRemoteControl/ctrl"

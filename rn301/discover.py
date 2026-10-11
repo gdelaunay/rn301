@@ -151,7 +151,7 @@ def parse_device_desc(xml: bytes | str, base_url: str = "") -> dict:
         for svc in device.iter():
             if _ln(svc.tag) != "service":
                 continue
-            get = lambda t: next((c.text for c in svc if _ln(c.tag) == t), None)
+            get = lambda t, svc=svc: next((c.text for c in svc if _ln(c.tag) == t), None)
             if get("serviceType"):
                 out["services"].append({
                     "type": get("serviceType"),
@@ -240,7 +240,7 @@ def _ssdp_search(timeout: float) -> dict[str, dict]:
             sock.settimeout(remaining)
             try:
                 data, addr = sock.recvfrom(65535)
-            except socket.timeout:
+            except TimeoutError:
                 break
             except OSError:
                 continue

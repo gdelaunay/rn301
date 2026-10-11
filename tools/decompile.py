@@ -7,7 +7,10 @@ Usage:
     .venv/Scripts/python tools/decompile.py src-all "com/yamaha/npcontroller/activity2"
                                                                -> décompile tout un package
 """
-import sys, os, re
+import os
+import re
+import sys
+
 from loguru import logger
 
 logger.remove()
@@ -17,8 +20,8 @@ APK = os.path.join(BASE, "NETWORK PLAYER CONTROLLER_4.60_APKPure.apk")
 OUT = os.path.join(BASE, "apk", "decompiled", "src")
 os.makedirs(OUT, exist_ok=True)
 
-from androguard.misc import AnalyzeAPK
 from androguard.decompiler.decompiler import DecompilerDAD
+from androguard.misc import AnalyzeAPK
 
 print("Chargement APK... (peut prendre ~1min)", file=sys.stderr)
 a, d, dx = AnalyzeAPK(APK)

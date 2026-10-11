@@ -12,8 +12,9 @@ import time
 import unittest
 from http.server import ThreadingHTTPServer
 
+from test_gena import AVT_STOPPED, _FakeRenderer, notify
+
 from rn301 import PushServer
-from test_gena import _FakeRenderer, notify, AVT_STOPPED
 
 AVT_PLAYING = AVT_STOPPED.replace("STOPPED", "PLAYING")
 

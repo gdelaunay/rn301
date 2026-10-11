@@ -59,8 +59,8 @@ import time
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable
 
 RENDERER_PORT = 8080
 EVENT_NS = "urn:schemas-upnp-org:event-1-0"
@@ -111,10 +111,11 @@ def parse_propertyset(body: bytes | str) -> dict[str, dict[str, str]]:
     out: dict[str, dict[str, str]] = {}
     for prop in root.iter(f"{{{EVENT_NS}}}property"):
         for child in prop:
-            if not child.tag.split("}")[-1] == "LastChange" or not (child.text or "").strip():
+            text = child.text or ""
+            if child.tag.split("}")[-1] != "LastChange" or not text.strip():
                 continue
             try:
-                event = ET.fromstring(child.text.strip())
+                event = ET.fromstring(text.strip())
             except ET.ParseError:
                 continue
             for instance in event:                 # <InstanceID val="0">
@@ -151,8 +152,17 @@ class _NotifyHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 class _Subscription:
-    __slots__ = ("service", "callback", "sid", "timeout", "deadline",
-                 "last_seq", "missed", "state", "renew_fails")
+    __slots__ = (
+        "callback",
+        "deadline",
+        "last_seq",
+        "missed",
+        "renew_fails",
+        "service",
+        "sid",
+        "state",
+        "timeout",
+    )
 
     def __init__(self, service: str, callback: EventCallback | None):
         self.service = service
@@ -239,7 +249,7 @@ class GenaClient:
             self._httpd = None
             self.callback_url = None
 
-    def __enter__(self) -> "GenaClient":
+    def __enter__(self) -> GenaClient:
         return self
 
     def __exit__(self, *exc) -> None:
@@ -380,7 +390,7 @@ class GenaClient:
             raise GenaError(f"{method} {service} : renderer injoignable ({url}): {e}") from None
 
     @staticmethod
-    def _parse_timeout(header: str) -> int:
+    def _parse_timeout(header: str | None) -> int:
         m = re.search(r"Second-(\d+)", header or "")
         return int(m.group(1)) if m else DEFAULT_TIMEOUT
 

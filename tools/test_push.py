@@ -5,8 +5,12 @@ Sert un fichier en HTTP sur le LAN, puis SOAP SetAVTransportURI + Play.
 Usage:
     python tools/test_push.py <fichier> [--ip 192.168.1.32] [--amp 192.168.1.91] [--port 9000]
 """
-import sys, os, socket, argparse, threading, time
+import argparse
 import http.server
+import os
+import socket
+import threading
+import time
 import urllib.request
 import xml.sax.saxutils as sx
 

@@ -4,7 +4,10 @@ Usage:
     .venv/Scripts/python tools/analyze_apk.py strings   -> dump tous les strings du dex
     .venv/Scripts/python tools/analyze_apk.py classes   -> liste les classes
 """
-import sys, os, re, logging
+import os
+import re
+import sys
+
 from loguru import logger
 
 logger.remove()  # couper le debug spam d'androguard
@@ -15,6 +18,7 @@ OUT = os.path.join(BASE, "apk", "decompiled")
 os.makedirs(OUT, exist_ok=True)
 
 from androguard.misc import AnalyzeAPK
+
 
 def load():
     a, d, dx = AnalyzeAPK(APK)

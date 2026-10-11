@@ -31,13 +31,27 @@ editable), `pip install -e ../rn301`, ou git/PyPI une fois publié.
 
 __version__ = "1.0.0"
 
-from .rn301 import RN301, YNCError, SOURCE_TAGS, REMOTE_KEYS
-from .push import PushServer, PushError, Renderer, FileServer, didl_metadata
+from .discover import DiscoverError, discover, discover_one, parse_device_desc
 from .gena import GenaClient, GenaError, parse_propertyset
-from .discover import discover, discover_one, parse_device_desc, DiscoverError
+from .push import FileServer, PushError, PushServer, Renderer, didl_metadata
+from .rn301 import REMOTE_KEYS, RN301, SOURCE_TAGS, YNCError
 
-__all__ = ["__version__",
-           "RN301", "YNCError", "SOURCE_TAGS", "REMOTE_KEYS",
-           "PushServer", "PushError", "Renderer", "FileServer", "didl_metadata",
-           "GenaClient", "GenaError", "parse_propertyset",
-           "discover", "discover_one", "parse_device_desc", "DiscoverError"]
+__all__ = [
+           "REMOTE_KEYS",
+           "RN301",
+           "SOURCE_TAGS",
+           "DiscoverError",
+           "FileServer",
+           "GenaClient",
+           "GenaError",
+           "PushError",
+           "PushServer",
+           "Renderer",
+           "YNCError",
+           "__version__",
+           "didl_metadata",
+           "discover",
+           "discover_one",
+           "parse_device_desc",
+           "parse_propertyset",
+]

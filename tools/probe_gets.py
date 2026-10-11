@@ -5,7 +5,8 @@ combinées), avec retry. Résultats -> amp/probe_gets.json + rapport console.
 
 Usage: .venv/Scripts/python tools/probe_gets.py
 """
-import json, re, time
+import json
+import time
 import urllib.request
 
 AMP = "http://192.168.1.91/YamahaRemoteControl/ctrl"

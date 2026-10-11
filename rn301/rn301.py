@@ -89,7 +89,7 @@ def _find_text(node, *path):
     return cur.text.strip() if cur is not None and cur.text else None
 
 
-def _tag(path: str) -> str:
+def _tag(path: str) -> tuple[str, str]:
     """'Main_Zone/Volume/Mute' -> '<Main_Zone><Volume><Mute>' + fermantes."""
     parts = path.split("/")
     open_ = "".join(f"<{p}>" for p in parts)
@@ -116,7 +116,7 @@ class RN301:
 
     def _raw(self, cmd: str, xml: str) -> str:
         """POST <YAMAHA_AV cmd=...>xml</YAMAHA_AV> avec retry. Renvoie le corps."""
-        body = f'<YAMAHA_AV cmd="{cmd}">{xml}</YAMAHA_AV>'.encode("utf-8")
+        body = f'<YAMAHA_AV cmd="{cmd}">{xml}</YAMAHA_AV>'.encode()
         last_err = None
         for attempt in range(self.retries):
             try:
@@ -149,14 +149,14 @@ class RN301:
         requête concurrente d'un autre client (webapp, script, Renderer…)
         ne passe pendant ce temps.
         """
-        last = None
+        last: tuple[str, str] | None = None
         with self._lock:
             for attempt in range(self.retries):
                 rsp = self._raw(cmd, xml)
                 try:
                     root = ET.fromstring(rsp)
                 except ET.ParseError as e:
-                    raise YNCError(f"réponse XML invalide: {e}", body=rsp)
+                    raise YNCError(f"réponse XML invalide: {e}", body=rsp) from e
                 rc = root.get("RC", "?")
                 if rc == "0":
                     return root
@@ -166,6 +166,7 @@ class RN301:
                     # l'ampli met ~4-5 s ; des retries trop rapprochés semblent
                     # entretenir l'état occupé -> délai long (validé en live).
                     time.sleep(5.0)
+        assert last is not None, "boucle de retries jamais exécutée"
         raise YNCError(f"ampli a refusé la commande (RC={last[0]})", rc=last[0], body=last[1])
 
     def get(self, path: str) -> str | None:
@@ -555,7 +556,7 @@ class RN301:
         Chemin validé en live : Tuner/Play_Control/Tuning/Freq/{FM,AM}."""
         band = band.upper()
         if band == "FM":
-            val = int(round(float(freq) * 100))
+            val = round(float(freq) * 100)
             xml = f"<Val>{val}</Val><Exp>2</Exp><Unit>MHz</Unit>"
             path = "Tuner/Play_Control/Tuning/Freq/FM"
         elif band == "AM":

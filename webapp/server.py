@@ -19,11 +19,12 @@ import threading
 import traceback
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import ClassVar
 from urllib.parse import parse_qs, urlparse
 
-from rn301 import RN301, YNCError, GenaClient
-from rn301.push import PushServer, PushError
-from rn301.discover import discover_one, DiscoverError
+from rn301 import RN301, GenaClient, YNCError
+from rn301.discover import DiscoverError, discover_one
+from rn301.push import PushError, PushServer
 
 amp: RN301 | None = None   # initialisé dans main() ou par /api/rediscover
 push: PushServer | None = None
@@ -195,7 +196,7 @@ class Handler(BaseHTTPRequestHandler):
         fond, erreur no_discovery une fois le scan terminé sans résultat."""
         self._json(_DISCOVERING if discovering else _NO_AMP, 503)
 
-    _ASSET_TYPES = {".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf",
+    _ASSET_TYPES: ClassVar[dict[str, str]] = {".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf",
                     ".otf": "font/otf", ".css": "text/css; charset=utf-8",
                     ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml",
                     ".png": "image/png", ".json": "application/json"}
@@ -375,7 +376,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "pas de pochette"}, 404)
         elif path == "/art":
             # proxy pochette d'album (l'URL est relative à l'ampli)
-            from urllib.parse import urlparse as _up, parse_qs as _pq
+            from urllib.parse import parse_qs as _pq
+            from urllib.parse import urlparse as _up
             url = (_pq(_up(self.path).query).get("url") or [""])[0]
             if not url:
                 self._json({"error": "url requise"}, 400)

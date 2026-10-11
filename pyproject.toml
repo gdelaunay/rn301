@@ -44,3 +44,35 @@ version = { attr = "rn301.__version__" }
 
 [tool.setuptools.package-data]
 rn301 = ["py.typed"]
+
+# --------------------------- lint / format (outils dev, non-dépendance)
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+# sélection volontaire : le cœur utile + import/typing/simplification.
+# (ruff 0.17 active un set maximaliste sans config → on recale nous-mêmes
+# pour que la CI et le local donnent le même résultat, quelle que la version.)
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    "B008",   # appel de fonction dans un argument par défaut — idiomatique (argparse, None)
+    "E731",   # lambda assigné — utilisé sciemment dans des helpers de parsing
+    "SIM105",  # try/except/pass → contextlib.suppress : la version explicite garde la lisibilité
+    "E702",   # plusieurs instructions sur une ligne (;) — style compact volontaire (parsing)
+    "RUF002",  # « ponctuation ambiguë » — de vrais typographes FR (– « ») dans les docstrings
+]
+
+[tool.ruff.lint.per-file-ignores]
+# outils de RE & tests : scripts dev non-livrés → tolérances larges
+"tools/*.py" = ["E402", "B007", "RUF059", "SIM115"]
+"tests/*.py" = ["B011", "SIM115"]
+
+# --------------------------- type-check (informatif, mode basic)
+# basedpyright est LE plus strict ; en mode « all/recommended » il inonde
+# de reportUnknown* sur la stdlib non annotée. basic = vrai signal, pas de bruit.
+# scopé sur rn301/ (la surface publique qui livre py.typed).
+[tool.basedpyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.10"
+include = ["rn301"]
