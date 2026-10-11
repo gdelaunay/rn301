@@ -1,8 +1,8 @@
-# rn301-py — Contrôle complet d'un Yamaha R-N301 (Python + web)
+# rn301 — Contrôle complet d'un Yamaha R-N301 (Python + web)
 
 🇫🇷 Français · [🇬🇧 English](README.en.md)
 
-> Le **repo** s'appelle `rn301-py` ; le **package** s'appelle `rn301`.
+> Repo et package s'appellent tous les deux `rn301`.
 
 Librairie Python et serveur web pour piloter un ampli hi-fi **Yamaha R-N301**
 (2013) sans l'application officielle. Protocole **YNC** (Yamaha Network Control)
@@ -51,7 +51,7 @@ python -m unittest discover tests
 Installer la lib dans un autre projet :
 
 ```bash
-pip install -e ../rn301-py          # ou : uv add ../rn301-py --editable
+pip install -e ../rn301          # ou : uv add ../rn301 --editable
 ```
 
 Le package expose deux CLI : `rn301-discover` (scan SSDP → JSON) et

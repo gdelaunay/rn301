@@ -1,4 +1,4 @@
-# rn301-py — Full control of a Yamaha R-N301 (Python + web)
+# rn301 — Full control of a Yamaha R-N301 (Python + web)
 
 [🇫🇷 Français](README.md) · 🇬🇧 English
 
@@ -49,7 +49,7 @@ python -m unittest discover tests
 Install the library in another project:
 
 ```bash
-pip install -e ../rn301-py          # or: uv add ../rn301-py --editable
+pip install -e ../rn301          # or: uv add ../rn301 --editable
 ```
 
 The package exposes two CLIs: `rn301-discover` (SSDP scan → JSON) and
