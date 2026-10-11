@@ -182,10 +182,15 @@ déclare. État des validations live :
 | WAV / LPCM 44.1 kHz stéréo | ✅ |
 | MP3 | ✅ (durée piste correcte) |
 | FLAC | ✅ |
+| FLAC 96k / 192k | ✅ (hi-res) |
 | MP4 / M4A (AAC) | ✅ |
-| WMA | non testé |
+| ALAC (.m4a) | ✅ |
+| Mémo vocal Samsung (.m4a/AAC) | ❌ PLAYING mais aucun son |
+| WMA | ❌ (ne joue que la première note) |
+| OGG / Opus | ❌ (PLAYING affiché, aucun son) |
+| AC3 | ❌ (démarre puis s'arrête) |
+| Mono LPCM | non testé (rare) |
 | Webradio (flux HTTP direct via `push_url`) | non testé |
-| OGG / Opus | non testé (mime servi par la lib, décodage ampli inconnu) |
 
 Format non accepté → transcoder à la volée en WAV/LPCM ou MP3 (ffmpeg) :
 ce sont les formats les plus sûrs du renderer. LPCM = aussi le format idéal
