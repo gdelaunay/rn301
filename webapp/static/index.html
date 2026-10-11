@@ -495,8 +495,9 @@ function applyI18n(){
     const v=t(el.getAttribute('data-i18n'));if(v)el.textContent=v;});
   document.querySelectorAll('[data-i18n-html]').forEach(el=>{
     const v=t(el.getAttribute('data-i18n-html'));if(v)el.innerHTML=v;});
+  const _proto=location.protocol==='https:'?'https':'http';
   document.querySelectorAll('[data-i18n-ph]').forEach(el=>{
-    const v=t(el.getAttribute('data-i18n-ph'));if(v)el.placeholder=v;});
+    const v=t(el.getAttribute('data-i18n-ph'),{proto:_proto});if(v)el.placeholder=v;});
   document.querySelectorAll('[data-i18n-title]').forEach(el=>{
     const v=t(el.getAttribute('data-i18n-title'));if(v)el.title=v;});
   document.querySelectorAll('[data-i18n-aria]').forEach(el=>{
@@ -512,6 +513,9 @@ function setLang(lang){
 (async function(){
   try{const r=await fetch('i18n.json');if(r.ok)i18nData=await r.json();}catch(e){}
   if(curLang!=='fr'){applyI18n();document.documentElement.setAttribute('lang',curLang);}
+  const pu=document.getElementById('pushurl');
+  if(pu){const p=location.protocol==='https:'?'https':'http';
+    const v=t('push.url_placeholder',{proto:p});if(v)pu.placeholder=v;}
   const sel=document.getElementById('langSel');
   if(sel)sel.value=curLang;
 })();
