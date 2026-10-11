@@ -157,8 +157,10 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:2px solid var(
 .now{display:flex;gap:12px;align-items:center}
 .now img{width:56px;height:56px;border-radius:var(--radius);background:#000;object-fit:cover;border:var(--hairline) solid var(--border)}
 /* Placeholder : carré aux mêmes dimensions que la pochette, note de musique en
-   --ink-muted. Affiché tant qu'aucune image n'a chargé (ou si elle est en erreur). */
-.artph{flex:0 0 auto;width:56px;height:56px;display:flex;align-items:center;justify-content:center;
+   --ink-muted. Affiché tant qu'aucune image n'a chargé (ou si elle est en erreur).
+   Sélecteur .msi.artph (et pas .artph) : .msi est déclarée PLUS BAS et impose
+   display:inline-block → à spécificité égale le flex/centrage passait à la trappe. */
+.msi.artph{flex:0 0 auto;width:56px;height:56px;display:flex;align-items:center;justify-content:center;
   border-radius:var(--radius);border:var(--hairline) solid var(--border);
   background:var(--bg-deep);color:var(--ink-muted);font-size:26px}
 .now .t{font-weight:600;line-height:1.3}
@@ -304,7 +306,7 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
     </div>
     <div class="now">
       <img id="art" style="display:none" alt="">
-      <i class="msi artph" id="artph" aria-hidden="true">library_music</i>
+      <i class="msi artph" id="artph" aria-hidden="true">music_note</i>
       <div>
         <div class="t" id="npTitle"></div>
         <div class="s" id="npSub"></div>
