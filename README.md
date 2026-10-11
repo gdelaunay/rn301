@@ -37,6 +37,8 @@ l'ampli (module *localfilecontroller* de l'app officielle).
                          └────────────────────────┘
 ```
 
+> Développé avec Qwen3.8 Max et Qwen3.8 Flash via [Pi](https://github.com/badlogic/pi-mono), dans [Zed](https://zed.dev) via [ACP](https://agentclientprotocol.com).
+
 ## Démarrage rapide
 
 ```bash

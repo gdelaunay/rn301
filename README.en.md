@@ -37,6 +37,8 @@ MediaRenderer to **push audio** to the amplifier (the official app's
                  └────────────────────────┘
 ```
 
+> Developed with Qwen3.8 Max and Qwen3.8 Flash via [Pi](https://github.com/badlogic/pi-mono), in [Zed](https://zed.dev) via [ACP](https://agentclientprotocol.com).
+
 ## Quick start
 
 ```bash
