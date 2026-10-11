@@ -424,10 +424,10 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
 
     <div class="card">
       <div class="lbl eyebrow">Connexion à l'ampli</div>
-      <p class="help-txt">Au démarrage le serveur découvre l'ampli en SSDP (multicast UPnP) puis
-      se « binde » dessus : client YNC, push DLNA et events GENA. <br>
+      <p class="help-txt">L'ampli est découvert en SSDP (multicast UPnP) avant d'y
+      connecter le client YNC, le push DLNA et les events GENA.
       Si la découverte échoue (ampli éteint, autre sous-réseau, multicast bloqué),
-      relancez un scan ou testez une IP manuelle ci-dessous.</p>
+      vous pouvez relancer un scan ou tester une IP manuelle.</p>
       <div class="row">
         Découverte SSDP :
         <button onclick="rediscover()"><i class="msi">wifi_protected_setup</i>&nbsp;Relancer</button>
@@ -440,17 +440,15 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
     </div>
 
     <div class="card">
-      <div class="lbl eyebrow">Infos / aide</div>
+      <div class="lbl eyebrow">Informations</div>
       <p class="help-txt"><b>Mode Push</b> — envoie n'importe quel audio du navigateur (fichier ou
-      webradio) directement au renderer DLNA de l'ampli (port :8080), hors des
-      sources natives. Le fichier est servi localement puis poussé en UPnP ;
-      lecture/pause/stop et métadonnées sont pilotés par la carte Lecture.</p>
+      webradio) directement au renderer DLNA de l'ampli (port :8080), source "device" de l'application native.
+      Le fichier est servi localement puis poussé en UPnP.</p>
       <p class="help-txt"><b>Volume instantané</b> — les changements de volume/mute arrivent en
-      push via GENA (abonnement RenderingControl) et sont relayés en SSE ; le
-      reste de l'état est pollé toutes les 4 s. Le badge « GENA » dans l'en-tête
-      confirme que la souscription est vivante.</p>
-      <p class="help-txt"><b>Sources</b> — l'ordre affiché reprend celui de l'app Yamaha native ;
-      les icônes sont normalisées côté UI sans toucher au protocole.</p>
+      push via GENA (abonnement RenderingControl, UPnP) et sont relayés en SSE ; le badge « GENA »
+      dans l'en-tête confirme que la souscription est vivante.
+      Le reste de l'état est pollé toutes les 4 secondes.</p>
+      <p class="help-txt"><b>Sources</b> — liste et ordre repris de la configuration de l'app Yamaha native pour l'ampli R-N301.</p>
     </div>
 
     <div class="card">
