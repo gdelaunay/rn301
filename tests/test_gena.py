@@ -145,18 +145,39 @@ class GenaTest(unittest.TestCase):
 
     def test_cycle_complet(self):
         events: list[tuple[str, dict]] = []
+        # le callback utilisateur est appelé APRÈS la mise à jour d'état (hors
+        # lock) → on ne peut pas assertir sur `events` juste après notify().
+        # Un Event dédié rend l'étape 4 déterministe.
+        got_volume = threading.Event()
+
+        def _cb(svc, ch):
+            events.append((svc, ch))
+            if svc == "RenderingControl" and "Volume" in ch:
+                got_volume.set()
+
         gena = GenaClient(self.amp, port=self.port)
-        sid_rc = gena.subscribe("RenderingControl",
-                                lambda svc, ch: events.append((svc, ch)))
+        sid_rc = gena.subscribe("RenderingControl", _cb)
         sid_avt = gena.subscribe("AVTransport")
         cb = gena.callback_url or ""
+
+        # le thread du callback applique l'état APRÈS avoir renvoyé le 200 UPnP
+        # → toute assertion d'état suit via wait_for (sinon : course flaky).
+        def wait_val(service, name, val):
+            return gena.wait_for(service,
+                                 lambda s: s.get(name, {}).get("val") == val,
+                                 timeout=3)
 
         # 1. NOTIFY initial (SEQ=0) -> état complet accumulé
         notify(cb, sid_rc, 0, RC_INITIAL)
         notify(cb, sid_avt, 0, AVT_STOPPED.replace("STOPPED", "NO_MEDIA_PRESENT"))
+        self.assertTrue(wait_val("RenderingControl", "Volume", "50"),
+                        "l'état initial n'a pas été accumulé")
+        self.assertEqual(gena.var("RenderingControl", "Mute")["val"], "0")
 
         # 2. delta Volume (SEQ=1) : l'état accumulé garde Mute/PresetNameList
         notify(cb, sid_rc, 1, RC_VOLUME)
+        self.assertTrue(wait_val("RenderingControl", "Volume", "52"),
+                        "le delta Volume n'a pas été appliqué")
         st = gena.state("RenderingControl")
         self.assertEqual(st["Volume"]["val"], "52")
         self.assertEqual(st["Mute"]["val"], "0")            # pas écrasé (delta)
@@ -164,19 +185,22 @@ class GenaTest(unittest.TestCase):
 
         # 3. trou de SEQ (1 -> 4) : 2 events perdus comptés
         notify(cb, sid_rc, 4, RC_MUTE)
+        self.assertTrue(wait_val("RenderingControl", "Mute", "1"),
+                        "le delta Mute n'a pas été appliqué")
         self.assertEqual(gena.missed("RenderingControl"), 2)
         self.assertEqual(gena.var("RenderingControl", "Mute")["val"], "1")
 
-        # 4. callback utilisateur appelé sur chaque NOTIFY utile
+        # 4. callback utilisateur appelé sur chaque NOTIFY utile (via Event)
+        self.assertTrue(got_volume.wait(3), "le callback n'a pas été invoqué")
         self.assertTrue(any(svc == "RenderingControl" and "Volume" in ch
                             for svc, ch in events))
 
         # 5. wait_for se débloque sur l'event transport
+        results: list[bool] = []
         done = threading.Thread(target=lambda: results.append(
             gena.wait_for("AVTransport",
                           lambda s: s.get("TransportState", {}).get("val") == "STOPPED",
                           timeout=5)), daemon=True)
-        results: list[bool] = []
         done.start()
         time.sleep(0.2)
         notify(cb, sid_avt, 1, AVT_STOPPED)
