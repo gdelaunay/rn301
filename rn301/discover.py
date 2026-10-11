@@ -171,14 +171,21 @@ def _ssdp_search(timeout: float) -> dict[str, dict]:
 
     Garde-fou mesuré sur le matériel : la LOCATION doit pointer sur la même IP
     que l'émetteur du datagramme (sinon artefacts multi-homing/proxy).
+
+    Lève DiscoverError si le socket ne peut pas être ouvert/émis (pas de
+    multicast, pare-feu…) : l'appelant distingue ainsi « réseau HS » de
+    « aucun ampli trouvé » (liste vide).
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, struct.pack("b", 2))
-        sock.bind(("", 0))
-        for st in SEARCH_TARGETS:
-            sock.sendto(_MSEARCH.format(st=st).encode(), (SSDP_ADDR, SSDP_PORT))
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, struct.pack("b", 2))
+            sock.bind(("", 0))
+            for st in SEARCH_TARGETS:
+                sock.sendto(_MSEARCH.format(st=st).encode(), (SSDP_ADDR, SSDP_PORT))
+        except OSError as e:
+            raise DiscoverError(f"socket SSDP indisponible : {e}") from e
         found: dict[str, dict] = {}
         deadline = time.monotonic() + timeout
         while True:

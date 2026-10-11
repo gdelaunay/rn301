@@ -391,6 +391,7 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
 
 <script>
 let state={}, band='FM', shuffle=false, repeat='Off', playing=false, pushMode=false;
+let ampError=false, ampErrorText='', ampErrorCode='';   // état connexion ampli
 let listEver=false, listBusySince=0, listRetry=null, listGaveUp=false;   // navigateur
 /* Mapping source (Input_Sel / liste des entrées) -> nom d'icône Material Symbols.
    Clés en MAJUSCULES ; srcIcon normalise. Repli 'input' si source inconnue. */
@@ -597,11 +598,28 @@ async function pushFile(){
    sources sont à l'écran en ~200 ms au lieu de 2-3 s. Les cartes riches (now
    playing, tuner, liste, push) restent masquées jusqu'à l'état complet : elles
    dépendent de play_info/list_info que basic_status ne renvoie pas. */
+function paintSysInfo(){
+  const el=document.getElementById('sysinfo');
+  if(ampError){ el.textContent=ampErrorText||'ampli injoignable'; return; }
+  if(!state||Object.keys(state).length===0){ el.textContent='connexion…'; return; }
+  const on=state.power==='On';
+  el.textContent=`${state.model||'R-N301'}${state.version?' · v'+state.version:''} · ${on?'allumé':'veille'}${genaLive?' · GENA':''}`;
+}
+
+function setAmpError(code, text){
+  const first=(!ampError||ampErrorCode!==code);
+  ampError=true; ampErrorCode=code||''; ampErrorText=text||'ampli injoignable';
+  paintSysInfo();
+  // premier passage seulement : ne pas spammer le toast toutes les 4 s
+  if(first&&(code==='no_discovery'||code==='unreachable')) toast(ampErrorText);
+}
+
 async function bootstrap(){
   const sent=Date.now();
   try{
     const r=await fetch('/api/basic'); const j=await r.json();
-    if(j.state) render(j.state,sent);
+    if(!r.ok||j.error){ setAmpError(j.code||(r.status===503?'no_discovery':'unreachable'), j.error); return; }
+    if(j.state){ if(ampError){ampError=false; ampErrorCode=''; ampErrorText='';} render(j.state,sent); }
   }catch(_){/* le refresh() complet arrive derrière */}
 }
 
@@ -609,8 +627,9 @@ async function refresh(){
   const sent=Date.now();          // fraîcheur conservative : ce snapshot date d'ICI
   try{
     const r=await fetch('/api/state'); const j=await r.json();
-    if(j.state) render(j.state,sent);
-  }catch(e){document.getElementById('sysinfo').textContent='ampli injoignable';}
+    if(!r.ok||j.error){ setAmpError(j.code||(r.status===503?'no_discovery':'unreachable'), j.error); return; }
+    if(j.state){ if(ampError){ampError=false; ampErrorCode=''; ampErrorText='';} render(j.state,sent); }
+  }catch(e){ setAmpError('unreachable', 'serveur webapp injoignable'); }
 }
 
 /* Boutons de source (+ pseudo-source PUSH en dernier). Extrait de render() pour
@@ -776,8 +795,8 @@ function render(s,ts){
   noteDevice(s.volume,s.mute,ts);
   paintVolLabel();                       // power vient d'arriver : le libellé suit
   const on=s.power==='On';
-  document.getElementById('sysinfo').textContent=`${s.model||'R-N301'}${s.version?' · v'+s.version:''} · ${on?'allumé':'veille'}${genaLive?' · GENA':''}`;
-  const bp=document.getElementById('btnPower'); bp.classList.toggle('on',on);
+  paintSysInfo();
+  document.getElementById('btnPower').classList.toggle('on',on);
 
   // amorçage : on s'arrête aux sources (les cartes riches sont display:none)
   if(s.partial){renderSources(s);return;}
@@ -918,11 +937,15 @@ bootstrap(); refresh(); setInterval(refresh,4000);
 // volume/mute en push instantané (GENA → SSE) — canal ordonné, ts = réception
 let genaLive=false;                 // sert uniquement au badge « GENA » de sysinfo
 const es=new EventSource('/api/events');
-es.onopen=()=>{genaLive=true;};
+es.onopen=()=>{};                  // ne PAS mettre genaLive ici : `onopen` dit
+                                     // que le serveur web répond, pas que GENA
+                                     // est abonné — le hello SSE le précise.
 es.onerror=()=>{genaLive=false;};   // EventSource se reconnecte seul
 es.onmessage=e=>{
   try{
     const d=JSON.parse(e.data);
+    if(d.hello){ genaLive=!!d.gena_connected; paintSysInfo(); return; }
+    // vrai événement GENA : la souscription est vivante
     genaLive=true;
     noteDevice(d.volume,d.mute);
   }catch(_){}

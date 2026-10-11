@@ -23,11 +23,67 @@ from urllib.parse import parse_qs, urlparse
 
 from rn301 import RN301, YNCError, GenaClient
 from rn301.push import PushServer, PushError
+from rn301.discover import discover_one, DiscoverError
 
-amp: RN301      # initialisé dans main()
+amp: RN301 | None = None   # initialisé dans main() ou par /api/rediscover
 push: PushServer | None = None
 gena: GenaClient | None = None
 music_dir: str = "music"
+amp_host: str = ""
+# Config de binding, posée une fois par main() puis relue par /api/rediscover.
+# Valeurs explicites (pas le namespace argparse) pour éviter de coupler
+# _bind_amp à argparse et de dupliquer ses defaults.
+no_push: bool = False
+no_gena: bool = False
+push_port: int = 9000
+
+_NO_AMP = {
+    "error": "aucun ampli Yamaha R-N301 découvert sur le réseau",
+    "code": "no_discovery",
+    "hint": "Allume-le, vérifie qu'il est sur le même sous-réseau, puis POST /api/rediscover.",
+}
+
+
+def _quiet_close(obj) -> None:
+    """Ferme sans propager d'erreur : on est déjà en train de démonter."""
+    if obj is None:
+        return
+    try:
+        obj.close()
+    except Exception:
+        pass
+
+
+def _bind_amp(host: str) -> None:
+    """(Re)construit amp/push/gena sur ce host. Ferme proprement les anciens.
+
+    Appelé au boot par main() et par /api/rediscover. Idempotent.
+    """
+    global amp, push, gena, amp_host
+    _quiet_close(gena)
+    gena = None
+    if push is not None:
+        _quiet_close(push)    # envoie Stop → évite le ERROR_OCCURRED au repos
+        push = None
+    amp_host = host
+    amp = RN301(host)
+    if not no_push:
+        try:
+            push = PushServer(host, serve_port=push_port)
+            push.start()
+            print(f"push DLNA: fichiers servis sur :{push_port} (uploads -> {music_dir}/)")
+        except Exception as e:
+            print(f"push indisponible ({e})")
+            push = None
+    if not no_gena:
+        try:
+            gena = GenaClient(host,
+                              on_error=lambda svc, msg: print(f"GENA {svc}: {msg}"))
+            gena.subscribe("RenderingControl", on_gena_event)
+            print("GENA: volume/mute en push (RenderingControl abonné)")
+        except Exception as e:
+            gena = None
+            print(f"GENA indisponible ({e}) — polling 4 s uniquement")
 
 
 class EventHub:
@@ -147,11 +203,14 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     def full_state(self) -> dict:
-        """Agrège l'état ampli pour l'UI (plusieurs GET, un par chemin)."""
-        try:
-            st = amp.basic_status()
-        except YNCError as e:
-            return {"error": str(e)}
+        """Agrège l'état ampli pour l'UI (plusieurs GET, un par chemin).
+
+        L'échec de `basic_status` est **propagé** (YNCError) : c'est l'appel
+        canonique, s'il rate l'ampli est injoignable et la route doit renvoyer
+        un 502 propre. Les sous-appels (config, play_info, réglages réseau,
+        push) restent en échec gracieux : l'UI sait afficher sans eux.
+        """
+        st = amp.basic_status()
         out = dict(st)
         try:
             cfg = amp.system_config()
@@ -202,17 +261,26 @@ class Handler(BaseHTTPRequestHandler):
         elif path.startswith("/assets/"):
             self.serve_asset(path[len("/assets/"):])
         elif path == "/api/state":
-            self._json({"state": self.full_state()})
+            if amp is None:
+                self._json(_NO_AMP, 503)
+                return
+            try:
+                self._json({"state": self.full_state()})
+            except YNCError as e:
+                self._json({"error": str(e), "amp_host": amp_host}, 502)
         elif path == "/api/basic":
             # Amorçage UI : l'état minimal en 1 à 2 GET YNC (basic_status +
             # liste des sources, mise en cache) au lieu des 6-8 GET séquentiels
             # de /api/state → power/volume/mute/sources affichés en ~200 ms.
             # Les cartes riches (now playing, tuner, liste, push) attendent
             # /api/state : elles dépendent de play_info/list_info.
+            if amp is None:
+                self._json(_NO_AMP, 503)
+                return
             try:
                 st = amp.basic_status()
             except YNCError as e:
-                self._json({"error": str(e)}, 502)
+                self._json({"error": str(e), "amp_host": amp_host}, 502)
                 return
             if not getattr(amp, "_inputs_cache", None):
                 try:
@@ -232,6 +300,9 @@ class Handler(BaseHTTPRequestHandler):
             # (mesuré — docs/DLNA_PUSH.md §5).
             # La source est passée par le client (il la connaît) : pas de GET
             # Input_Sel supplémentaire. Réponse = mêmes clés que full_state().
+            if amp is None:
+                self._json(_NO_AMP, 503)
+                return
             src = (parse_qs(urlparse(self.path).query).get("source") or [""])[0]
             out: dict = {"ok": True, "now": True}
             try:
@@ -254,11 +325,17 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/events":
             self.sse_stream()
         elif path == "/api/inputs":
+            if amp is None:
+                self._json(_NO_AMP, 503)
+                return
             try:
                 self._json({"inputs": amp.list_inputs()})
             except YNCError as e:
                 self._json({"error": str(e)}, 502)
         elif path == "/api/config":
+            if amp is None:
+                self._json(_NO_AMP, 503)
+                return
             try:
                 self._json(amp.system_config())
             except YNCError as e:
@@ -301,7 +378,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         q = hub.register()
         try:
-            # état courant immédiat (le client n'attend pas le premier changement)
+            # frame d'ouverture : le frontend ne peut PAS deviner l'état GENA
+            # depuis `onopen` (ça ne dit que « le serveur web répond »). On
+            # envoie un hello explicite avec le flag de souscription réel.
+            hello = {"hello": True, "gena_connected": gena is not None}
+            self.wfile.write(f"data: {json.dumps(hello)}\n\n".encode())
+            self.wfile.flush()
             if gena is not None:
                 seed = {}
                 v = gena.var("RenderingControl", "Volume")
@@ -329,8 +411,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == "/api/rediscover":
+            self.handle_rediscover()
+            return
         if path == "/api/upload":
             self.handle_upload()
+            return
+        if amp is None:
+            self._json(_NO_AMP, 503)
             return
         body = self._body()
         try:
@@ -352,6 +440,31 @@ class Handler(BaseHTTPRequestHandler):
             self._json(result)
         else:
             self._json({"ok": True, "state": self.full_state()})
+
+    def handle_rediscover(self):
+        """Relance un scan SSDP et re-bound amp/push/gena si un ampli répond.
+
+        Préparé pour la future page Réglages/Infos ; pas de bouton UI pour
+        l'instant — déclenchable via `fetch('/api/rediscover',{method:'POST'})`.
+
+        Note : `_bind_amp` réécrit les globaux amp/push/gena sans lock. Un
+        rediscover lancé pendant un polling peut faire lire à un thread une
+        instance en cours de fermeture ; acceptable pour un outil LAN
+        mono-utilisateur, à protéger si l'usage se multiplie.
+        """
+        try:
+            found = discover_one()
+        except DiscoverError as e:
+            self._json({"error": f"discover: {e}"}, 502)
+            return
+        if not found:
+            self._json({"ok": False, "found": False, **_NO_AMP})
+            return
+        _bind_amp(found["host"])
+        self._json({"ok": True, "found": True,
+                    "host": found["host"],
+                    "model": found.get("model"),
+                    "friendly_name": found.get("friendly_name")})
 
     def handle_upload(self):
         """Reçoit un fichier audio brut (body binaire) dans music_dir/ pour push."""
@@ -534,7 +647,8 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     p = argparse.ArgumentParser(description="Serveur web Yamaha R-N301")
-    p.add_argument("--amp", default="192.168.1.91", help="IP de l'ampli")
+    p.add_argument("--amp", default=None,
+                   help="IP de l'ampli (sinon : découverte SSDP automatique)")
     p.add_argument("--port", type=int, default=8080)
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--push-port", type=int, default=9000, help="port HTTP servant les fichiers poussés")
@@ -544,24 +658,30 @@ def main():
                    help="désactive les events GENA (volume/mute en push SSE)")
     args = p.parse_args()
 
-    global amp, push, gena, music_dir
-    amp = RN301(args.amp)
+    global music_dir, no_push, no_gena, push_port
     music_dir = args.music
-    if not args.no_push:
-        push = PushServer(args.amp, serve_port=args.push_port)
-        push.start()
-        print(f"push DLNA: fichiers servis sur :{args.push_port} (uploads -> {music_dir}/)")
-    if not args.no_gena:
-        # Volume/mute instantanés : GENA RenderingControl -> hub -> SSE /api/events.
-        # Dégradé gracieux : si l'abonnement échoue, le polling 4 s suffit.
+    no_push = args.no_push
+    no_gena = args.no_gena
+    push_port = args.push_port
+
+    host = args.amp
+    if not host:
+        print("discovery SSDP en cours…", flush=True)
         try:
-            gena = GenaClient(args.amp,
-                              on_error=lambda svc, msg: print(f"GENA {svc}: {msg}"))
-            gena.subscribe("RenderingControl", on_gena_event)
-            print("GENA: volume/mute en push (RenderingControl abonné)")
-        except Exception as e:
-            gena = None
-            print(f"GENA indisponible ({e}) — polling 4 s uniquement")
+            found = discover_one()
+        except DiscoverError as e:
+            found = None
+            print(f"discover : {e}")
+        if found:
+            host = found["host"]
+            label = found.get("friendly_name") or found.get("model") or "R-N301"
+            print(f"ampli découvert : {label} @ {host}")
+        else:
+            print("Aucun R-N301 Yamaha trouvé sur le réseau. "
+                  "Allume-le puis passe /api/rediscover (ou relance le serveur).")
+
+    if host:
+        _bind_amp(host)
 
     class _QuietServer(ThreadingHTTPServer):
         """ThreadingHTTPServer qui avale le bruit des fermetures de connexions.
@@ -584,16 +704,14 @@ def main():
             super().handle_error(request, client_address)
 
     srv = _QuietServer((args.host, args.port), Handler)
-    print(f"R-N301 web: http://localhost:{args.port}  (ampli: {args.amp})")
+    print(f"R-N301 web: http://localhost:{args.port}  (ampli: {host or '—'})")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         print("\nbye")
     finally:
-        if gena is not None:
-            gena.close()
-        if push is not None:
-            push.close()
+        _quiet_close(gena)
+        _quiet_close(push)
 
 
 if __name__ == "__main__":
