@@ -1,6 +1,10 @@
 # rn301 — Full control of a Yamaha R-N301 (Python + web)
 
-[🇫🇷 Français](README.md) · 🇬🇧 English
+[Français](README.md) · English
+
+[![CI](https://github.com/gdelaunay/rn301/actions/workflows/ci.yml/badge.svg)](https://github.com/gdelaunay/rn301/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%20|%203.12%20|%203.13-blue)](#quick-start)
 
 Python library and web server to control a **Yamaha R-N301** (2013) hi-fi
 amplifier without the official app. The **YNC** (Yamaha Network
