@@ -46,6 +46,17 @@ jobs:
           node webapp/tests/list_ui.test.mjs
           node webapp/tests/volume_ui.test.mjs
 
+      - name: Absolutiser le lien du README anglais (rendu PyPI)
+        run: |
+          # README.md (FR) = le long_description PyPI. Seul son lien vers
+          # README.en.md est trompeur sur PyPI (404) — les liens docs/tools
+          # relatifs, eux, pointent « naturellement » vers le repo, on les garde.
+          # sed appliqué sur le workspace de BUILD uniquement : le repo (main)
+          # conserve les chemins relatifs, parfaits pour GitHub/forks/branches.
+          sed -i 's#](README\.en\.md)#](https://github.com/gdelaunay/rn301/blob/main/README.en.md)#g' README.md
+          # sanity : le lien est bien devenu absolu dans la copie de build
+          grep -q 'blob/main/README.en.md' README.md
+
       - name: Build wheel + sdist
         run: |
           pip install build
