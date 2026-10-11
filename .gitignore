@@ -1,5 +1,5 @@
-apk/extracted/
 apk/decompiled/
+apk/extracted/
 .venv/
 __pycache__/
 *.pyc
@@ -22,3 +22,5 @@ build/
 *.egg-info/
 dist/
 webapp/pack/
+
+.env
