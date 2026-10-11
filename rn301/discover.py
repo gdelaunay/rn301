@@ -166,15 +166,47 @@ def parse_device_desc(xml: bytes | str, base_url: str = "") -> dict:
 # scan SSDP
 # ---------------------------------------------------------------------------
 
+def _local_ipv4s() -> list[str]:
+    """Adresses IPv4 locales candidates pour l'émission multicast SSDP.
+
+    Sur une machine multi-homée (VPN, Hyper-V, WSL, Docker…), Windows choisit
+    souvent la mauvaise interface de sortie pour le multicast et le M-SEARCH ne
+    part jamais sur le LAN de l'ampli → aucune réponse. On énumère les IP
+    locales et on émettra sur chacune. 100 % stdlib.
+    """
+    ips: list[str] = []
+    # IP de la route par défaut : un « connect » UDP vers une adresse publique
+    # n'émet aucun paquet mais révèle l'adresse source que le routage choisit.
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("8.8.8.8", 53))
+        ips.append(probe.getsockname()[0])
+    except OSError:
+        pass
+    finally:
+        probe.close()
+    # Adresses associées au hostname : couvre les interfaces secondaires que la
+    # route par défaut ne liste pas (Ethernet + Wi-Fi + virtuelles).
+    try:
+        ips.extend(socket.gethostbyname_ex(socket.gethostname())[2])
+    except OSError:
+        pass
+    out: list[str] = []
+    for ip in ips:
+        if ip and not ip.startswith("127.") and ip not in out:
+            out.append(ip)
+    return out
+
+
 def _ssdp_search(timeout: float) -> dict[str, dict]:
     """M-SEARCH multicast → {location: {'server', 'usn', 'st'}} dédoublonné.
 
     Garde-fou mesuré sur le matériel : la LOCATION doit pointer sur la même IP
     que l'émetteur du datagramme (sinon artefacts multi-homing/proxy).
 
-    Lève DiscoverError si le socket ne peut pas être ouvert/émis (pas de
-    multicast, pare-feu…) : l'appelant distingue ainsi « réseau HS » de
-    « aucun ampli trouvé » (liste vide).
+    Lève DiscoverError si le socket ne peut pas être ouvert (pas de multicast,
+    pare-feu…) : l'appelant distingue ainsi « réseau HS » de « aucun ampli
+    trouvé » (liste vide).
     """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -182,10 +214,23 @@ def _ssdp_search(timeout: float) -> dict[str, dict]:
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, struct.pack("b", 2))
             sock.bind(("", 0))
-            for st in SEARCH_TARGETS:
-                sock.sendto(_MSEARCH.format(st=st).encode(), (SSDP_ADDR, SSDP_PORT))
         except OSError as e:
             raise DiscoverError(f"socket SSDP indisponible : {e}") from e
+        # Émission sur CHAQUE interface locale : en multi-homing la route
+        # multicast par défaut peut partir hors du LAN de l'ampli. Une
+        # interface muette/inutilisable n'interrompt pas le scan.
+        for iface in (_local_ipv4s() or [None]):
+            if iface is not None:
+                try:
+                    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF,
+                                    socket.inet_aton(iface))
+                except OSError:
+                    continue
+            for st in SEARCH_TARGETS:
+                try:
+                    sock.sendto(_MSEARCH.format(st=st).encode(), (SSDP_ADDR, SSDP_PORT))
+                except OSError:
+                    pass
         found: dict[str, dict] = {}
         deadline = time.monotonic() + timeout
         while True:
