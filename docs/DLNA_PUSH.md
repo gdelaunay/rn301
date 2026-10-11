@@ -32,7 +32,7 @@ GET http://<ip>:8080/MediaRenderer/desc.xml      → 200 OK
 ```
 friendlyName : YAMAHA R-N301
 deviceType   : urn:schemas-upnp-org:device:MediaRenderer:1  (DLNA DMR-1.50)
-UDN          : uuid:5f9ec1b3-ed59-1900-4530-00a0dec48d64
+UDN          : uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 SERVER       : KnOS/3.2 UPnP/1.0 DMP/3.5        (stack UPnP embarquée)
 ```
 

@@ -27,8 +27,8 @@ class ParseDeviceDescTest(unittest.TestCase):
         self.assertEqual(self.desc["model"], "R-N301")
         self.assertEqual(self.desc["manufacturer"], "Yamaha Corporation")
         self.assertEqual(self.desc["friendly_name"], "YAMAHA R-N301")
-        self.assertEqual(self.desc["serial"], "0ED9C263")
-        self.assertEqual(self.desc["udn"], "uuid:5f9ec1b3-ed59-1900-4530-00a0dec48d64")
+        self.assertEqual(self.desc["serial"], "XXXXXXXX")
+        self.assertEqual(self.desc["udn"], "uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
         self.assertEqual(self.desc["device_type"],
                          "urn:schemas-upnp-org:device:MediaRenderer:1")
 
@@ -68,7 +68,7 @@ class ParseSsdpResponseTest(unittest.TestCase):
             b"LOCATION: http://192.168.1.91:8080/MediaRenderer/desc.xml\r\n"
             b"SERVER: KnOS/3.2 UPnP/1.0 DMP/3.5\r\n"
             b"ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n"
-            b"USN: uuid:5f9ec1b3-ed59-1900-4530-00a0dec48d64::urn:schemas-upnp-org:device:MediaRenderer:1\r\n"
+            b"USN: uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx::urn:schemas-upnp-org:device:MediaRenderer:1\r\n"
             b"\r\n"
         )
         r = parse_ssdp_response(raw)

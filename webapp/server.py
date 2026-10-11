@@ -81,9 +81,8 @@ def on_gena_event(service: str, changed: dict) -> None:
     if out:
         hub.publish(out)
 
-# L'UI vit dans un vrai fichier statique (webapp/static/index.html), charge
-# au demarrage. On garde la variable INDEX_HTML : le reste du serveur est
-# inchange (routeur, Cache-Control, etc.).
+# L'UI est servie depuis un fichier statique (webapp/static/index.html),
+# chargé en mémoire au démarrage pour être renvoyé à chaque requête /.
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 

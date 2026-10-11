@@ -1,11 +1,10 @@
 """Tests hors-ligne de la lib (rn301.py + push.py) — aucun ampli requis.
 
-Couvre les fixes de l'étape 1 :
+Couvre :
   * clamp volume : échelle protocole 0..100 par défaut, plafond logiciel
     optionnel via RN301(max_volume=N) ;
   * verrou partagé par ampli (YNC + SOAP sérialisés) ;
-  * pochette push servie sur /albumart (bug du cover_data stocké sur le mauvais
-    objet, l'ampli recevait 404).
+  * serveur de fichiers push (pochette sur /albumart, range requests).
 
 Lancer : python -m unittest discover tests -v
 """
@@ -86,8 +85,7 @@ class VolumeClampTest(unittest.TestCase):
 
 
 class FileServerCoverTest(unittest.TestCase):
-    """Le bug : cover_data était stocké sur le FileServer mais lu sur le
-    ThreadingHTTPServer → /albumart renvoyait 404, jamais de pochette en push."""
+    """Vérifie que /albumart sert bien la pochette stockée sur le FileServer."""
 
     def setUp(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -129,7 +127,7 @@ class FileServerCoverTest(unittest.TestCase):
 
     def test_set_file_avant_start(self):
         srv = FileServer("127.0.0.1", 0)
-        srv.set_file(self.tmp.name)          # ne doit plus planter (ancien assert)
+        srv.set_file(self.tmp.name)          # allowed before start()
         srv.start()
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{srv.port}/x") as r:

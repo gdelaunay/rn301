@@ -33,7 +33,7 @@ RC_INITIAL = (
     '</LastChange></e:property></e:propertyset>'
 )
 
-# event incrémental : SEULE la variable modifiée (piège n°1 de la ROADMAP)
+# event incrémental : SEULE la variable modifiée (piège n°1)
 RC_VOLUME = (
     '<?xml version="1.0"?>'
     '<e:propertyset xmlns:e="urn:schemas-upnp-org:event-1-0">'

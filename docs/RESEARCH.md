@@ -1,7 +1,7 @@
 # Recherche — Yamaha R-N301 / Network Player Controller
 
 ## Le matos
-- **Ampli** : Yamaha R-N301, firmware `1.13/0.05`, System_ID `0ED9C263`
+- **Ampli** : Yamaha R-N301, firmware `1.13/0.05`, System_ID `XXXXXXXX`
 - **IP** : `192.168.1.91`
 - **Serveur HTTP embarqué** : `Network_Player/3.1 (R-N301)`
 - **App officielle** : NP Controller v4.60 (package `com.yamaha.npcontroller`, target SDK 26,

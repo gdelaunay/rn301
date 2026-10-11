@@ -6,13 +6,13 @@
 <meta name="color-scheme" content="light dark">
 <title>Yamaha R-N301</title>
 <script>
-/* Thème appliqué avant le rendu (évite le flash de fond). Mécanisme repris du pack. */
+/* Thème appliqué avant le rendu (évite le flash de fond). */
 (function(){try{var m=localStorage.getItem('theme');if(m==='light'||m==='dark')document.documentElement.setAttribute('data-theme',m);}catch(e){}})();
 </script>
 <style>
 /* =====================================================================
    R-N301 webapp — socle minimaliste.
-   Palette + dual-layer papier repris du pack basedesign (couleurs seules).
+   Palette + dual-layer papier (couleurs Campbell, thème clair/sombre).
    Fonts : stack système uniquement (rien d' éditorial). Radius 2px,
    hairline 1px, zéro ombre, zéro halo. Icônes Material : plus tard.
    ===================================================================== */
@@ -34,7 +34,7 @@
   --link:var(--campbell-blue); --error:var(--campbell-red); --success:var(--campbell-green);
   --info:var(--campbell-cyan);
   /* Primaire tournante — 8 tokens bruts (light/dark), calculés À LA MAIN.
-     Pas de color-mix() : comme le pack, on privilégie la compat navigateur.
+     Pas de color-mix() : compat navigateur large.
      Dérivées : shade = primaire 88% + ink 12% ; focus = primaire 40% + fond élevé 60%.
      La teinte (ici magenta Campbell) est un placeholder — on la choisira ensuite. */
   --primary-light:       #035CB5;  /* teinte retenue (bleu) */
@@ -46,7 +46,7 @@
   --focus-ring-light:    #9ABEE1;  /* focus (light) = #035CB5 40% + bg-elev 60% */
   --focus-ring-dark:     #173A5C;  /* focus (dark)  = #035CB5 40% + bg-elev-dark 60% */
   /* L'aiguillage vers --primary/--on-primary/--primary-shade/--focus-ring est
-     fait par la couche de résolution plus bas (comme le pack). */
+     fait par la couche de résolution plus bas. */
   --on:var(--campbell-green); --active-bg:#F4F0E6; --track:var(--campbell-bright-white);
 
   /* Fonts système basiques */
@@ -75,7 +75,7 @@
   }
 }
 
-/* Résolution de la primaire — l'aiguillage light↔dark (comme le pack).
+/* Résolution de la primaire — aiguillage light↔dark.
    Les tokens résolus sont ceux consommés par le CSS ; ils pointent sur la
    variante light (défaut) ou dark selon l'attribut data-theme / le système. */
 :root{--primary:var(--primary-light);--on-primary:var(--on-primary-light);--primary-shade:var(--primary-shade-light);--focus-ring:var(--focus-ring-light)}
@@ -928,7 +928,7 @@ es.onmessage=e=>{
   }catch(_){}
 };
 
-/* -- Thème : auto → light → dark (mécanisme + persistance repris du pack) -- */
+/* -- Thème : auto → light → dark (persistance localStorage) -- */
 (function(){
   const MODES=['auto','light','dark'];
   const root=document.documentElement;

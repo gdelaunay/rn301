@@ -1,142 +1,142 @@
-# Table complète des opérations YNC (extrait de k.java + q.java)
+# Table complÃ¨te des opÃ©rations YNC (extrait de k.java + q.java)
 
-op 301989889 [PUT/écriture]
+op 301989889 [PUT/Ã©criture]
   chemin: System/Config/Device_Name
 
-op 301989890 [PUT/écriture]
+op 301989890 [PUT/Ã©criture]
 
-op 301989891 [PUT/écriture]
+op 301989891 [PUT/Ã©criture]
 
-op 301989892 [PUT/écriture]
+op 301989892 [PUT/Ã©criture]
 
-op 301989893 [PUT/écriture]
+op 301989893 [PUT/Ã©criture]
   chemin: System/Network/MAC_Address_Filter/Mode
 
-op 301989894 [PUT/écriture]
+op 301989894 [PUT/Ã©criture]
   chemin: System/Network/MAC_Address_Filter/Address_1
 
-op 301989895 [PUT/écriture]
+op 301989895 [PUT/Ã©criture]
   chemin: System/Network/MAC_Address_Filter/Address_2
 
-op 301989896 [PUT/écriture]
+op 301989896 [PUT/Ã©criture]
   chemin: System/Network/MAC_Address_Filter/Address_3
 
-op 301989897 [PUT/écriture]
+op 301989897 [PUT/Ã©criture]
   chemin: System/Network/MAC_Address_Filter/Address_4
 
-op 301989898 [PUT/écriture]
+op 301989898 [PUT/Ã©criture]
   chemin: System/Network/MAC_Address_Filter/Address_5
 
-op 301989899 [PUT/écriture]
+op 301989899 [PUT/Ã©criture]
   chemin: System/Config/Network_Standby
 
-op 301989900 [PUT/écriture]
+op 301989900 [PUT/Ã©criture]
   chemin: System/Config/Sleep
 
-op 301989901 [PUT/écriture]
+op 301989901 [PUT/Ã©criture]
   chemin: System/Config/Gapless_Playback
 
-op 301989902 [PUT/écriture]
+op 301989902 [PUT/Ã©criture]
   chemin: System/Power
 
-op 301989903 [PUT/écriture]
+op 301989903 [PUT/Ã©criture]
 
-op 301989904 [PUT/écriture]
+op 301989904 [PUT/Ã©criture]
   chemin: System/Input/Input_Sel
 
-op 301989905 [PUT/écriture]
+op 301989905 [PUT/Ã©criture]
   chemin: Player/Play_Control/Playback
 
-op 301989906 [PUT/écriture]
+op 301989906 [PUT/Ã©criture]
   chemin: Player/Play_Control/Play_Mode
   valeurs: ['Shuffle']
 
-op 301989907 [PUT/écriture]
+op 301989907 [PUT/Ã©criture]
   chemin: Player/Play_Control/Play_Mode
   valeurs: ['Repeat']
 
-op 301989908 [PUT/écriture]
+op 301989908 [PUT/Ã©criture]
   chemin: Player/Play_Control/Track_Number
 
-op 301989909 [PUT/écriture]
+op 301989909 [PUT/Ã©criture]
   chemin: Player/List_Control/Page/Cursor
   valeurs: ['Return to Home', 'Return']
 
-op 301989910 [PUT/écriture]
+op 301989910 [PUT/Ã©criture]
   chemin: Player/List_Control/Direct_Sel
 
-op 301989911 [PUT/écriture]
+op 301989911 [PUT/Ã©criture]
   chemin: Player/List_Control/Jump_Line
 
-op 301989912 [PUT/écriture]
+op 301989912 [PUT/Ã©criture]
   chemin: Player/Play_Control/Play_Next_URI
 
-op 301989913 [PUT/écriture]
+op 301989913 [PUT/Ã©criture]
   chemin: Player/Play_Control/Feedback_Param
 
-op 301989914 [PUT/écriture]
+op 301989914 [PUT/Ã©criture]
 
-op 301989915 [PUT/écriture]
+op 301989915 [PUT/Ã©criture]
   chemin: System/Misc/Tray
   valeurs: ['Open/Close']
 
-op 301989916 [PUT/écriture]
+op 301989916 [PUT/Ã©criture]
   chemin: System/Sound/Pure_Direct/Mode
 
-op 301989917 [PUT/écriture]
+op 301989917 [PUT/Ã©criture]
   chemin: Player/Play_Control/iPod_Mode
 
-op 301989918 [PUT/écriture]
+op 301989918 [PUT/Ã©criture]
 
-op 301989919 [PUT/écriture]
+op 301989919 [PUT/Ã©criture]
 
-op 301989920 [PUT/écriture]
+op 301989920 [PUT/Ã©criture]
 
-op 301989921 [PUT/écriture]
+op 301989921 [PUT/Ã©criture]
 
-op 301989922 [PUT/écriture]
+op 301989922 [PUT/Ã©criture]
   chemin: System/Firmware
 
-op 301989923 [PUT/écriture]
+op 301989923 [PUT/Ã©criture]
 
-op 301989924 [PUT/écriture]
+op 301989924 [PUT/Ã©criture]
   chemin: Player/Service_Control/Buffer_Ctrl/radiko
 
-op 301989925 [PUT/écriture]
+op 301989925 [PUT/Ã©criture]
   chemin: Player/Service_Control/radiko_bg
 
-op 301989937 [PUT/écriture]
+op 301989937 [PUT/Ã©criture]
   chemin: System/Volume/Lvl
 
-op 301989938 [PUT/écriture]
+op 301989938 [PUT/Ã©criture]
   chemin: System/Volume/Mute
 
-op 301989940 [PUT/écriture]
+op 301989940 [PUT/Ã©criture]
   chemin: Tuner/Play_Control/Band
 
-op 301989941 [PUT/écriture]
+op 301989941 [PUT/Ã©criture]
   chemin: Tuner/Play_Control/Tuning/FM/Freq
 
-op 301989943 [PUT/écriture]
+op 301989943 [PUT/Ã©criture]
   chemin: Tuner/Play_Control/Service
 
-op 301989944 [PUT/écriture]
+op 301989944 [PUT/Ã©criture]
   chemin: Tuner/Play_Control/Preset/FM/Preset_Sel
 
-op 301989945 [PUT/écriture]
+op 301989945 [PUT/Ã©criture]
   chemin: Tuner/Play_Control/Preset/DAB/Preset_Sel
 
-op 301989952 [PUT/écriture]
+op 301989952 [PUT/Ã©criture]
   chemin: System/Misc/Clock/Param
 
-op 301989953 [PUT/écriture]
+op 301989953 [PUT/Ã©criture]
   chemin: System/Misc/Timer/Mode
 
-op 301989954 [PUT/écriture]
+op 301989954 [PUT/Ã©criture]
   chemin: System/Misc/Timer/Param
   valeurs: ['Once', 'Every']
 
-op 301989955 [PUT/écriture]
+op 301989955 [PUT/Ã©criture]
   chemin: System/Misc/Network/MAC_Address_Filter
   valeurs: ['Toggle']
 

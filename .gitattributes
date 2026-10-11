@@ -1,0 +1,11 @@
+# Normaliser les fins de ligne : tout en LF dans le repo,
+# Git gère la conversion CRLF uniquement au checkout sous Windows.
+* text=auto eol=lf
+
+# Fichiers explicitement binaires (pas de conversion).
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary
+*.apk binary
