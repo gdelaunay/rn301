@@ -7,8 +7,10 @@
 
    Ce qu'il verrouille : la carte ne DISPARAÎT JAMAIS pendant un chargement
    (Menu_Status='Busy' ou list_info null) — contenu précédent conservé, grisé +
-   spinner — donc plus de saut de scroll ; et elle se repeint dès que le menu est
-   Ready, via la réponse légère du POST ou la relance /api/list.
+   spinner — donc plus de saut de scroll ; elle se repeint dès que le menu est
+   Ready, via la réponse légère du POST ou la relance /api/list ; et le marqueur
+   « en lecture » (retrouvé côté client depuis Play_Info, le curseur YNC ne
+   suivant pas les changements de piste) suit la piste, distinct du curseur.
 
    Lancer :  node webapp/tests/list_ui.test.mjs                              */
 
@@ -139,6 +141,9 @@ function makeWorld(opts = {}) {
   sandbox.el = id => sandbox.document.getElementById(id);
   sandbox.calls = () => [...sandbox.CALLS].map(c => c.kind);
   sandbox.menuTxt = () => [...sandbox.el('menu').children].map(d => d.textContent);
+  sandbox.menuCls = () => [...sandbox.el('menu').children].map(d => d.className);
+  sandbox.marked = () => [...sandbox.el('menu').children].filter(d => /\bcur\b/.test(d.className)).map(d => d.textContent);
+  sandbox.nowPlaying = (meta, playing = true) => sandbox.noteNowPlaying({ available: 'Ready', meta }, playing);
   sandbox.busy = () => !!sandbox.el('listcard')._cls.busy;
   sandbox.visible = () => sandbox.el('listcard').style.display !== 'none';
   return sandbox;
@@ -308,6 +313,105 @@ test('ligne Unselectable sans texte → ignorée, ligne non selectable → non c
   assert.deepEqual(kids.map(d => d.textContent), ['▸ Lecture', 'Dossier vide']);
   assert.equal(typeof kids[0].onclick, 'function');
   assert.equal(kids[1].onclick, undefined, 'une ligne Unselectable ne déclenche rien');
+});
+
+/* --- marqueur « en lecture » (le curseur YNC ne suit pas la piste) --------- */
+const TRACKS = MENU('Album', [
+  { txt: 'Intro' }, { txt: 'One More Time' }, { txt: 'Digital Love', sel: true }, { txt: 'Harder Better' },
+]);
+
+test('sans métadonnées → aucune ligne marquée, le curseur reste seul repère', () => {
+  const w = makeWorld();
+  w.syncListCard({ list_info: TRACKS }, true, 'SERVER');
+  assert.deepEqual(w.marked(), []);
+  assert.deepEqual(w.menuCls().filter(c => /\bsel\b/.test(c)).length, 1, 'curseur inchangé');
+});
+
+test('piste en lecture → marquée, et le curseur de navigation ne bouge pas', () => {
+  const w = makeWorld();
+  w.nowPlaying({ song: 'One More Time', artist: 'Daft Punk', album: 'Discovery' });
+  w.syncListCard({ list_info: TRACKS }, true, 'SERVER');
+  assert.deepEqual(w.marked(), ['One More Time'], 'la ligne qui joue, pas celle cliquée');
+  assert.deepEqual(w.menuCls(), ['li', 'li cur', 'li sel', 'li'], 'cur (lecture) ≠ sel (curseur)');
+  assert.equal(w.el('menu').children[1].title, 'En lecture');
+});
+
+test('changement de piste → le marqueur suit au prochain rendu', () => {
+  const w = makeWorld();
+  w.nowPlaying({ song: 'One More Time' });
+  w.syncListCard({ list_info: TRACKS }, true, 'SERVER');
+  assert.deepEqual(w.marked(), ['One More Time']);
+  w.nowPlaying({ song: 'Harder Better' });                  // fin de morceau / Skip Fwd
+  w.syncListCard({ list_info: TRACKS }, true, 'SERVER');
+  assert.deepEqual(w.marked(), ['Harder Better']);
+  assert.equal(w.el('menu').children[2].className, 'li sel', 'le curseur, lui, est resté où on a cliqué');
+});
+
+test('lecture stoppée/pausée → marqueur atténué (npidle), métadonnées conservées', () => {
+  const w = makeWorld();
+  w.nowPlaying({ song: 'Digital Love' }, false);
+  w.syncListCard({ list_info: TRACKS }, true, 'SERVER');
+  assert.deepEqual(w.menuCls()[2], 'li sel cur npidle');
+  assert.equal(w.el('menu').children[2].title, 'Dernier morceau chargé');
+});
+
+test('Txt tronqué par le firmware → reconnu par préfixe (≥ 6 car.)', () => {
+  const w = makeWorld();
+  w.nowPlaying({ song: 'Something About Us' });
+  w.syncListCard({ list_info: MENU('Album', [{ txt: 'Intro' }, { txt: 'Something Abou' }]) }, true, 'SERVER');
+  assert.deepEqual(w.marked(), ['Something Abou']);
+});
+
+test('titre court → pas de faux positif par préfixe', () => {
+  const w = makeWorld();
+  w.nowPlaying({ song: 'One' });
+  w.syncListCard({ list_info: MENU('Album', [{ txt: 'One More Time' }, { txt: 'Only' }]) }, true, 'SERVER');
+  assert.deepEqual(w.marked(), [], '« One » ne doit pas marquer « One More Time »');
+});
+
+test('piste absente du menu → repli sur l\'album, puis sur l\'artiste', () => {
+  const w = makeWorld();
+  w.nowPlaying({ song: 'Face to Face', album: 'Discovery', artist: 'Daft Punk' });
+  w.syncListCard({ list_info: MENU('Musique', [{ txt: 'Daft Punk' }, { txt: 'Discovery' }, { txt: 'Homework' }]) }, true, 'SERVER');
+  assert.deepEqual(w.marked(), ['Discovery'], 'niveau album : l\'album en lecture est marqué');
+  w.nowPlaying({ song: 'Face to Face', album: 'Random Access' });
+  w.syncListCard({ list_info: MENU('Musique', [{ txt: 'Daft Punk' }, { txt: 'Discovery' }]) }, true, 'SERVER');
+  assert.deepEqual(w.marked(), [], 'album inconnu du menu → rien (pas de marqueur fantaisiste)');
+});
+
+test('webradio : le nom de la station marque la ligne', () => {
+  const w = makeWorld();
+  w.nowPlaying({ station: 'FIP', song: null });
+  w.syncListCard({ list_info: MENU('Presets', [{ txt: 'TSF Jazz' }, { txt: 'FIP' }]) }, true, 'NET RADIO');
+  assert.deepEqual(w.marked(), ['FIP']);
+});
+
+test('accents/casse/ponctuation ignorés dans la comparaison', () => {
+  const w = makeWorld();
+  w.nowPlaying({ song: "L'Été — Indien" });
+  w.syncListCard({ list_info: MENU('Album', [{ txt: 'Joe Dassin' }, { txt: 'l ete indien' }]) }, true, 'SERVER');
+  assert.deepEqual(w.marked(), ['l ete indien']);
+});
+
+test('lignes vides/Unselectable jamais marquées', () => {
+  const w = makeWorld();
+  w.nowPlaying({ song: '   ' });
+  const m = { menu_status: 'Ready', menu_name: 'X', cursor_line: '1', lines: [
+    { line: 1, txt: '', attribute: 'Unselectable' },
+    { line: 2, txt: 'Dossier', attribute: 'Container' },
+  ] };
+  w.syncListCard({ list_info: m }, true, 'SERVER');
+  assert.deepEqual(w.marked(), []);
+});
+
+test('quitter la lecture réseau → plus aucun marqueur', () => {
+  const w = makeWorld();
+  w.nowPlaying({ song: 'One More Time' });
+  w.syncListCard({ list_info: TRACKS }, true, 'SERVER');
+  assert.deepEqual(w.marked(), ['One More Time']);
+  w.noteNowPlaying(null, false);                             // carte Lecture masquée
+  w.syncListCard({ list_info: TRACKS }, true, 'SERVER');
+  assert.deepEqual(w.marked(), []);
 });
 
 /* ------------------------------------------------------------------ runner */

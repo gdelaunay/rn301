@@ -167,6 +167,18 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;border:2px solid var(
 .list .li.sel{background:var(--active-bg);color:var(--ink);font-weight:600}
 .list .li.un{color:var(--ink-subtle);cursor:default}
 .list .li.un:hover{background:none}
+/* Marqueur « en lecture » — À NE PAS CONFONDRE avec .sel (le curseur de
+   NAVIGATION de l'ampli, Cursor_Position/Current_Line, qui ne bouge PAS quand
+   la piste change : fin de morceau ou Skip Fwd le laissent où l'utilisateur a
+   cliqué). La ligne qui joue est retrouvée côté client (Play_Info.Meta_Info ↔
+   texte des lignes) et signalée par la couleur primaire + une icône à droite.
+   Icône posée en ::after : le texte de la ligne reste le titre seul. */
+.list .li.cur{color:var(--primary)}
+.list .li.cur::after{content:'graphic_eq';margin:auto 0 auto auto;flex:0 0 auto;
+  font-family:'Material Symbols Outlined';font-weight:400;font-style:normal;
+  font-size:18px;line-height:1;letter-spacing:normal;text-transform:none;white-space:nowrap;
+  -webkit-font-feature-settings:'liga';font-feature-settings:'liga';color:var(--primary);user-select:none}
+.list .li.cur.npidle::after{content:'play_arrow';opacity:.7}   // pausé/stoppé : métadonnées connues, rien ne tourne
 /* Navigateur en chargement : la carte RESTE affichée avec son contenu précédent.
    La masquer (Menu_Status='Busy' le temps que l'ampli charge) supprimait ~300 px
    de hauteur → la page remontait à chaque clic, puis redescendait. Contenu grisé
@@ -232,7 +244,7 @@ button.pwr .msi,#btnPlay .msi{font-size:26px}
   letter-spacing:.01em;color:var(--ink-muted);cursor:default;user-select:none}
 /* boutons à icône seule : plus d'air + cible carrée ; Power/Play un peu plus grands */
 button:has(> .msi):not(.src){min-width:var(--control-h);padding-inline:14px}
-button.pwr,#btnPlay{height:40px;min-width:46px}
+button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
 #btnPower { padding-inline: 12px;}
 
 @media (max-width:560px){.src{flex-basis:44%}}
@@ -389,6 +401,11 @@ async function api(action,body,norefresh){
     if(!r.ok||j.error) throw new Error(j.error||r.status);
     if(j.state) render(j.state);
     if(!norefresh) refresh();          // seulement sur succès : un échec ne repeint pas
+    /* Transport : le full_state que le POST renvoie porte souvent les
+       métadonnées de l'ANCIENNE piste (l'ampli met ~1 s à charger la suivante).
+       Deux sondages légers rattrapent la carte Lecture et le marqueur du
+       navigateur. Voir bumpNow()/pollNow() plus bas. */
+    if(action==='playback'||action==='pushctl'||action==='line')bumpNow();
     return j;
   }catch(e){toast('Erreur : '+e.message);return null;}
 }
@@ -590,6 +607,44 @@ function setListBusy(on){
   if(on&&!stuck&&!listRetry)listRetry=setTimeout(pollList,350);
   return !stuck;
 }
+/* --- Marqueur « en lecture » ---------------------------------------------
+   L'ampli ne fournit AUCUN moyen de savoir quelle ligne du menu est en train
+   de jouer : Cursor_Position est un curseur de navigation (il ne suit ni la
+   fin d'un morceau ni Skip Fwd/Skip Rev), les Attribute ne connaissent que
+   Container/Item/Unselectable (pas de « Playing »), et GENA ne notifie pas la
+   lecture réseau SERVER (mesuré, cf. docs/DLNA_PUSH.md §5 — seul le push DLNA
+   est événementiel). On la retrouve donc côté client : les métadonnées de
+   Play_Info sont comparées au texte des lignes visibles. Candidates dans
+   l'ordre song → station → album → artist : à quelque niveau du menu qu'on se
+   trouve (pistes, album, artiste, dossier), la ligne correspondant à la lecture
+   en cours est marquée. Aucune correspondance (menu ailleurs, webradio sans
+   métadonnées) → pas de marqueur, plutôt qu'un faux positif. */
+let npKey=null, npPlaying=false;
+function normTxt(s){return String(s==null?'':s).normalize('NFD')
+  .replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+/* Appelé par render() AVANT syncListCard : paintList lit npKey. */
+function noteNowPlaying(pi,isPlaying){
+  const m=(pi&&pi.meta)||{};
+  const cand=[m.song,m.station,m.album,m.artist].map(normTxt).filter(t=>t.length>1);
+  npKey=cand.length?cand:null;      // null = rien à marquer (Stop, source muette…)
+  npPlaying=!!isPlaying;
+}
+/* N° de la ligne en lecture (0 = aucune). Égalité stricte d'abord, puis
+   préfixe — le firmware tronque Txt — seulement si le plus court des deux fait
+   au moins 6 caractères (sinon « A » ou « 01 » matcherait n'importe quoi). */
+function findNowLine(lines){
+  if(!npKey||!lines||!lines.length)return 0;
+  for(const k of npKey){
+    for(const l of lines){
+      const t=normTxt(l.txt);
+      if(t.length<2)continue;
+      if(t===k)return l.line;
+      const a=t.length<k.length?t:k, b=t.length<k.length?k:t;
+      if(a.length>=6&&b.startsWith(a))return l.line;
+    }
+  }
+  return 0;
+}
 /* Peint un menu Ready ; renvoie false si ce n'est pas prêt (contenu laissé tel quel). */
 function paintList(li){
   if(!(li&&li.menu_status==='Ready'&&li.lines&&li.lines.length))return false;
@@ -597,11 +652,15 @@ function paintList(li){
   document.getElementById('menuname').textContent=li.menu_name||('niveau '+li.menu_layer);
   const menu=document.getElementById('menu'); menu.innerHTML='';
   const cur=parseInt(li.cursor_line||'0');
+  const now=findNowLine(li.lines);
   li.lines.forEach(l=>{
     if(!l.txt&&l.attribute==='Unselectable')return;
     const d=document.createElement('div');
-    d.className='li'+(l.line===cur?' sel':'')+(l.attribute==='Unselectable'?' un':'');
+    const isNow=l.line===now;
+    d.className='li'+(l.line===cur?' sel':'')+(isNow?' cur'+(npPlaying?'':' npidle'):'')
+      +(l.attribute==='Unselectable'?' un':'');
     d.textContent=(l.line===cur?'▸ ':'')+l.txt;
+    if(isNow)d.title=npPlaying?'En lecture':'Dernier morceau chargé';
     if(l.attribute!=='Unselectable')d.onclick=()=>nav('line',{n:l.line});
     menu.appendChild(d);
   });
@@ -692,6 +751,7 @@ function render(s,ts){
   if(on&&net&&pi.available!=='Not Ready'&&(pi.meta||pi.playback)){
     nc.style.display='';
     playing=pushMode?['PLAYING','TRANSITIONING'].includes(ps.state):(pi.playback||'')==='Play';
+    noteNowPlaying(pi,playing);        // avant syncListCard : paintList marque la ligne en lecture
     document.getElementById('playIcon').textContent=playing?'pause':'play_arrow';
     /* Lecture SERVER (DLNA) : le firmware n'honore PAS le Pause — mesuré en live,
        PUT <SERVER><Play_Control><Playback>Pause</Playback> renvoie RC="0" mais
@@ -714,7 +774,7 @@ function render(s,ts){
     else art.style.display='none';
     if(pi.shuffle!==undefined){shuffle=pi.shuffle==='On';document.getElementById('btnShuffle').classList.toggle('on',shuffle);}
     if(pi.repeat!==undefined){repeat=pi.repeat;document.getElementById('btnRepeat').classList.toggle('on',repeat!=='Off');document.getElementById('repeatIcon').textContent=repeat==='One'?'repeat_one':'repeat';}
-  } else nc.style.display='none';
+  } else { nc.style.display='none'; noteNowPlaying(null,false); }
 
   // en mode push : transport simplifié (ni prev/next, ni shuffle/repeat — sans objet)
   ['btnPrev','btnNext','btnShuffle','btnRepeat'].forEach(id=>{
@@ -744,7 +804,59 @@ function render(s,ts){
   // système
   document.getElementById('btnNetStdby').classList.toggle('on',s.net_standby==='On');
   if(s.net_name)document.getElementById('netname').textContent=s.net_name;
+
+  armNow();       // lecture en cours : (ré)arme le sondage léger si utile
 }
+
+/* ===== Lecture en cours : sondage léger (/api/now) ==========================
+   2 GET YNC (Play_Info + List_Info) au lieu des 6-8 de /api/state. Deux usages :
+     - en continu (2,5 s) pendant qu'une source à liste joue : la carte Lecture
+       et le marqueur « en lecture » du navigateur suivent une fin de morceau
+       sans attendre le poll complet de 4 s ;
+     - en relance ciblée après une action de transport (bumpNow).
+   GENA ne peut pas remplacer ça : l'AVTransport du renderer ne notifie que le
+   push DLNA, jamais la lecture réseau SERVER (mesuré — docs/DLNA_PUSH.md §5).
+   Le bus YNC est sérialisé côté lib : ce sondage ne tourne que si l'onglet est
+   visible, qu'aucune navigation n'est en cours et que la source joue vraiment. */
+const NOW_MS=2500;
+let nowTimer=null, nowInFlight=false, bumpTimers=[];
+function nowWanted(){
+  if(document.hidden||pushMode||state.power!=='On')return false;
+  const inp=(state.input||'').toUpperCase();
+  if(inp!=='SERVER'&&inp!=='NET RADIO')return false;
+  const pi=state.play_info||{};
+  return pi.available!=='Not Ready'&&(pi.playback||'')!=='Stop';
+}
+function armNow(){if(!nowTimer&&!nowInFlight&&nowWanted())nowTimer=setTimeout(pollNow,NOW_MS);}
+/* Fusion dans l'état courant puis rendu : le même chemin que le poll complet,
+   donc les mêmes règles (carte qui ne disparaît pas, curseur grisé…). */
+function applyNow(j){
+  if(!j||j.error)return;
+  if(j.play_info!==undefined)state.play_info=j.play_info;
+  if(j.list_info!==undefined)state.list_info=j.list_info;
+  render(state);
+}
+/* force=true : relance après un clic de transport — l'état local peut encore
+   dire « Stop » alors que la lecture vient de (re)partir. */
+function pollNow(force){
+  nowTimer=null;
+  if(nowInFlight)return;
+  if(!force&&!nowWanted())return;
+  if(!state.input)return;
+  nowInFlight=true;
+  fetch('/api/now?source='+encodeURIComponent(state.input))
+    .then(function(r){return r.json();})
+    .then(function(j){nowInFlight=false;applyNow(j);armNow();},
+          function(){nowInFlight=false;armNow();});
+}
+function bumpNow(){
+  bumpTimers.forEach(clearTimeout);
+  bumpTimers=[700,2200].map(function(ms){return setTimeout(function(){pollNow(true);},ms);});
+}
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden){clearTimeout(nowTimer);nowTimer=null;}
+  else{refresh();armNow();}           // retour d'onglet : état frais tout de suite
+});
 
 bootstrap(); refresh(); setInterval(refresh,4000);
 

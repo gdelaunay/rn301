@@ -223,6 +223,35 @@ class Handler(BaseHTTPRequestHandler):
             st["inputs"] = amp._inputs_cache
             st["partial"] = True
             self._json({"state": st})
+        elif path == "/api/now":
+            # Sondage léger « lecture en cours » : 2 GET YNC (Play_Info +
+            # List_Info) au lieu des 6-8 de /api/state. C'est ce qui permet à
+            # l'UI de faire suivre la carte Lecture et le marqueur « en lecture »
+            # du navigateur (fin de morceau, next/prev) toutes les ~2,5 s sans
+            # saturer le bus YNC. GENA ne sert à rien ici : le renderer ne
+            # notifie que le push DLNA, jamais la lecture réseau SERVER
+            # (mesuré — docs/DLNA_PUSH.md §5).
+            # La source est passée par le client (il la connaît) : pas de GET
+            # Input_Sel supplémentaire. Réponse = mêmes clés que full_state().
+            src = (parse_qs(urlparse(self.path).query).get("source") or [""])[0]
+            out: dict = {"ok": True, "now": True}
+            try:
+                src = src or amp.get_input()
+                up = src.upper()
+                if up in ("SERVER", "NET RADIO", "SPOTIFY", "AIRPLAY", "TUNER"):
+                    try:
+                        out["play_info"] = amp.play_info(src)
+                    except YNCError:
+                        out["play_info"] = None
+                if up in ("SERVER", "NET RADIO"):
+                    try:
+                        out["list_info"] = amp.list_info(src)
+                    except YNCError:
+                        out["list_info"] = None
+                out["source"] = src
+                self._json(out)
+            except YNCError as e:
+                self._json({"error": str(e)}, 502)
         elif path == "/api/events":
             self.sse_stream()
         elif path == "/api/inputs":
