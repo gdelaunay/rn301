@@ -29,7 +29,7 @@ Installation depuis un autre projet : `uv add ../rn301` (path dependency
 editable), `pip install -e ../rn301`, ou git/PyPI une fois publié.
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 from .rn301 import RN301, YNCError, SOURCE_TAGS, REMOTE_KEYS
 from .push import PushServer, PushError, Renderer, FileServer, didl_metadata

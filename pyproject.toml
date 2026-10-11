@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rn301"
-version = "0.1.0"
+version = "1.0.0"
 description = "Contrôle complet de l'ampli hi-fi Yamaha R-N301 : protocole YNC, push DLNA (MediaRenderer :8080), eventing GENA, découverte SSDP — obtenu par reverse engineering de l'app officielle, validé en live. 100 % stdlib, zéro dépendance."
 readme = "README.md"
 requires-python = ">=3.10"
