@@ -159,6 +159,17 @@ def _load_index() -> str:
 INDEX_HTML = _load_index()
 
 
+def _load_i18n() -> bytes:
+    fp = os.path.join(_STATIC_DIR, "i18n.json")
+    if os.path.isfile(fp):
+        with open(fp, "rb") as f:
+            return f.read()
+    return b"{}"
+
+
+I18N_JSON = _load_i18n()
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "RN301Web/1.0"
     protocol_version = "HTTP/1.1"      # keep-alive : nécessaire au flux SSE
@@ -272,6 +283,8 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             self._send(200, INDEX_HTML.encode(), "text/html; charset=utf-8")
+        elif path == "/i18n.json":
+            self._send(200, I18N_JSON, "application/json; charset=utf-8")
         elif path.startswith("/assets/"):
             self.serve_asset(path[len("/assets/"):])
         elif path == "/api/state":

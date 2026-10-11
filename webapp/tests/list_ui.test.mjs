@@ -40,6 +40,18 @@ var REFRESH = [];        // refresh() complets demandés
 var apiReply = null;     // réponse simulée du POST de navigation
 var listReply = null;    // réponse simulée de /api/list (relance)
 
+/* --- i18n stub (tests tournent en FR par défaut) --- */
+var __I18N_FR = {
+  'browser.now_playing': 'En lecture',
+  'browser.last_loaded': 'Dernier morceau chargé',
+  'browser.level': 'niveau {n}'
+};
+function t(key, params) {
+  var s = (__I18N_FR[key] !== undefined) ? __I18N_FR[key] : key;
+  if (params) for (var k in params) s = s.split('{'+k+'}').join(params[k]);
+  return s;
+}
+
 var Date = { now: function () { return NOW; } };
 
 /* --- DOM minimal --- */

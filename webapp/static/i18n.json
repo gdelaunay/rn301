@@ -1,0 +1,220 @@
+{
+  "fr": {
+    "common": {
+      "error_prefix": "Erreur : "
+    },
+    "header": {
+      "back_home": "Retour à l'accueil",
+      "help": "Aide",
+      "help_title": "Aide / infos",
+      "theme_title": "Thème : auto / clair / sombre",
+      "theme": "Thème : {mode}",
+      "theme_auto": "auto",
+      "theme_light": "clair",
+      "theme_dark": "sombre",
+      "sysinfo_connecting": "connexion…",
+      "sysinfo_unreachable": "ampli injoignable",
+      "sysinfo_searching": "recherche de l'ampli…",
+      "sysinfo_on": "allumé",
+      "sysinfo_standby": "veille"
+    },
+    "volume": {
+      "label": "Volume",
+      "power": "Power",
+      "mute": "Mute",
+      "minus": "Volume moins",
+      "plus": "Volume plus"
+    },
+    "source": {
+      "label": "Source"
+    },
+    "now_playing": {
+      "label": "Lecture",
+      "prev": "Précédent",
+      "play_pause": "Lecture / Pause",
+      "next": "Suivant",
+      "stop": "Stop",
+      "shuffle": "Aléatoire",
+      "repeat": "Répéter",
+      "pause_unsupported": "Pause non supporté par le firmware en lecture serveur (DLNA) — utiliser Stop"
+    },
+    "tuner": {
+      "label": "Tuner",
+      "down": "Descendre",
+      "up": "Monter",
+      "search": "Recherche auto",
+      "frequency": "Fréquence",
+      "tune": "Accorder",
+      "tuned": "· accordé",
+      "stereo": "· stéréo"
+    },
+    "browser": {
+      "label": "Navigateur",
+      "back": "Retour",
+      "up": "Monter",
+      "down": "Descendre",
+      "select": "Sélectionner",
+      "level": "niveau {n}",
+      "now_playing": "En lecture",
+      "last_loaded": "Dernier morceau chargé"
+    },
+    "push": {
+      "label": "Mode Push — audio du navigateur",
+      "send_file": "Envoyer le fichier",
+      "url_placeholder": "http://… (webradio MP3, NAS…)",
+      "play_url": "Lire l'URL",
+      "no_file": "Choisis un fichier audio",
+      "sending": "Envoi…",
+      "source_title": "PUSH — mode appareil (fichier ou URL)"
+    },
+    "system": {
+      "label": "Système",
+      "cycle_network": "Cycle réseau",
+      "note": "Sleep / Gapless / Device_Name : non supportés par ce firmware en YNC."
+    },
+    "settings": {
+      "title": "Réglages",
+      "language": "Langue"
+    },
+    "help": {
+      "connection_title": "Connexion à l'ampli",
+      "connection_text": "L'ampli est découvert en SSDP (multicast UPnP) avant d'y connecter le client YNC, le push DLNA et les events GENA.\nSi la découverte échoue (ampli éteint, autre sous-réseau, multicast bloqué), vous pouvez relancer un scan ou tester une IP manuelle.",
+      "ssdp": "Découverte SSDP :",
+      "rescan": "Relancer",
+      "ip_placeholder": "IP manuelle (ex. 192.168.1.91)",
+      "connect": "Connecter",
+      "info_title": "Informations",
+      "info_push": "<b>Mode Push</b> — envoie n'importe quel audio du navigateur (fichier ou webradio) directement au renderer DLNA de l'ampli (port :8080), source \"device\" de l'application native. Le fichier est servi localement puis poussé en UPnP.",
+      "info_volume": "<b>Volume instantané</b> — les changements de volume/mute arrivent en push via GENA (abonnement RenderingControl, UPnP) et sont relayés en SSE ; le badge « GENA » dans l'en-tête confirme que la souscription est vivante. Le reste de l'état est pollé toutes les 4 secondes.",
+      "info_sources": "<b>Sources</b> — liste et ordre repris de la configuration de l'app Yamaha native pour l'ampli R-N301.",
+      "about_title": "À propos",
+      "about_text": "<b>Yamaha R-N301</b> — contrôle web de l'ampli, propulsé par la librairie Python <code>rn301</code> (protocole YNC, 100 % stdlib). Interface intégrée, sans dépendance externe.",
+      "amp_label": "Ampli"
+    },
+    "errors": {
+      "searching": "recherche…",
+      "unreachable": "injoignable",
+      "connected": "connecté",
+      "connected_at": "connecté · {host}",
+      "scan": "scan…",
+      "bind": "bind…",
+      "fail": "échec",
+      "found": "trouvé",
+      "need_ip": "Saisis une IP",
+      "connecting_to": "connexion à {host}…",
+      "bound_at": "Bindé @ {host}",
+      "amp_bound": "Ampli bindé @ {host}",
+      "amp_rediscovered": "Ampli redécouvert",
+      "webapp_unreachable": "serveur webapp injoignable"
+    }
+  },
+  "en": {
+    "common": {
+      "error_prefix": "Error: "
+    },
+    "header": {
+      "back_home": "Back to home",
+      "help": "Help",
+      "help_title": "Help / info",
+      "theme_title": "Theme: auto / light / dark",
+      "theme": "Theme: {mode}",
+      "theme_auto": "auto",
+      "theme_light": "light",
+      "theme_dark": "dark",
+      "sysinfo_connecting": "connecting…",
+      "sysinfo_unreachable": "amplifier unreachable",
+      "sysinfo_searching": "searching for the amplifier…",
+      "sysinfo_on": "on",
+      "sysinfo_standby": "standby"
+    },
+    "volume": {
+      "label": "Volume",
+      "power": "Power",
+      "mute": "Mute",
+      "minus": "Volume down",
+      "plus": "Volume up"
+    },
+    "source": {
+      "label": "Source"
+    },
+    "now_playing": {
+      "label": "Now Playing",
+      "prev": "Previous",
+      "play_pause": "Play / Pause",
+      "next": "Next",
+      "stop": "Stop",
+      "shuffle": "Shuffle",
+      "repeat": "Repeat",
+      "pause_unsupported": "Pause not supported by this firmware during server playback (DLNA) — use Stop instead"
+    },
+    "tuner": {
+      "label": "Tuner",
+      "down": "Step down",
+      "up": "Step up",
+      "search": "Auto search",
+      "frequency": "Frequency",
+      "tune": "Tune",
+      "tuned": "· tuned",
+      "stereo": "· stereo"
+    },
+    "browser": {
+      "label": "Browser",
+      "back": "Back",
+      "up": "Up",
+      "down": "Down",
+      "select": "Select",
+      "level": "level {n}",
+      "now_playing": "Now playing",
+      "last_loaded": "Last track loaded"
+    },
+    "push": {
+      "label": "Push Mode — browser audio",
+      "send_file": "Send file",
+      "url_placeholder": "http://… (MP3 webradio, NAS…)",
+      "play_url": "Play URL",
+      "no_file": "Choose an audio file",
+      "sending": "Sending…",
+      "source_title": "PUSH — device mode (file or URL)"
+    },
+    "system": {
+      "label": "System",
+      "cycle_network": "Cycle network",
+      "note": "Sleep / Gapless / Device_Name: not supported by this firmware via YNC."
+    },
+    "settings": {
+      "title": "Settings",
+      "language": "Language"
+    },
+    "help": {
+      "connection_title": "Amplifier connection",
+      "connection_text": "The amplifier is discovered via SSDP (UPnP multicast) before connecting the YNC client, DLNA push and GENA events.\nIf discovery fails (amplifier off, different subnet, blocked multicast), you can rescan or try a manual IP.",
+      "ssdp": "SSDP discovery:",
+      "rescan": "Rescan",
+      "ip_placeholder": "Manual IP (e.g. 192.168.1.91)",
+      "connect": "Connect",
+      "info_title": "Information",
+      "info_push": "<b>Push Mode</b> — sends any browser audio (file or webradio) directly to the amplifier's DLNA renderer (port :8080), the \"device\" source in the native app. The file is served locally then pushed via UPnP.",
+      "info_volume": "<b>Instant volume</b> — volume/mute changes arrive via GENA push (RenderingControl subscription, UPnP) and are relayed over SSE; the \"GENA\" badge in the header confirms the subscription is live. The rest of the state is polled every 4 seconds.",
+      "info_sources": "<b>Sources</b> — list and order taken from the native Yamaha app configuration for the R-N301.",
+      "about_title": "About",
+      "about_text": "<b>Yamaha R-N301</b> — web control for the amplifier, powered by the Python library <code>rn301</code> (YNC protocol, 100% stdlib). Self-contained interface, no external dependencies.",
+      "amp_label": "Amplifier"
+    },
+    "errors": {
+      "searching": "searching…",
+      "unreachable": "unreachable",
+      "connected": "connected",
+      "connected_at": "connected · {host}",
+      "scan": "scanning…",
+      "bind": "binding…",
+      "fail": "failed",
+      "found": "found",
+      "need_ip": "Enter an IP address",
+      "connecting_to": "connecting to {host}…",
+      "bound_at": "Bound to {host}",
+      "amp_bound": "Amplifier bound to {host}",
+      "amp_rediscovered": "Amplifier rediscovered",
+      "webapp_unreachable": "webapp server unreachable"
+    }
+  }
+}
