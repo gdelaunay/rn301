@@ -2,8 +2,6 @@
 
 🇫🇷 Français · [🇬🇧 English](README.en.md)
 
-> Repo et package s'appellent tous les deux `rn301`.
-
 Librairie Python et serveur web pour piloter un ampli hi-fi **Yamaha R-N301**
 (2013) sans l'application officielle. Protocole **YNC** (Yamaha Network Control)
 reverse-engineered à partir de l'APK *NP Controller 4.60* + validation live
