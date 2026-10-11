@@ -458,8 +458,9 @@ class Handler(BaseHTTPRequestHandler):
     def handle_rediscover(self):
         """Re-bound amp/push/gena : scan SSDP, ou IP manuelle si `host` fourni.
 
-        Body optionnel {"host": "1.2.3.4"} → bind direct sur cette IP (testé
-        par un basic_status) sans passer par la découverte. Sans body : scan
+        Body optionnel {"host": "1.2.3.4"} → bind direct sur cette IP, mais
+        seulement après l'avoir sondée (basic_status sur un RN301 temporaire) :
+        une IP invalide ne démonte donc PAS le bind courant. Sans body : scan
         SSDP via la lib. Déclenché par la carte « Connexion » de la vue Aide.
 
         Note : `_bind_amp` réécrit les globaux amp/push/gena sans lock. Un
@@ -469,13 +470,15 @@ class Handler(BaseHTTPRequestHandler):
         """
         manual = (self._body().get("host") or "").strip()
         if manual:
-            _bind_amp(manual)
+            # Sonde AVANT de binder : si l'IP est mauvaise on garde l'ampli
+            # courant (le bind précédent n'est pas démoli pour rien).
             try:
-                amp.basic_status()          # valide que l'IP répond vraiment
+                RN301(manual).basic_status()
             except YNCError as e:
                 self._json({"ok": False, "host": manual,
-                            "error": f"bindé sur {manual} mais ampli injoignable : {e}"}, 502)
+                            "error": f"{manual} injoignable : {e}"}, 502)
                 return
+            _bind_amp(manual)
             self._json({"ok": True, "found": True, "manual": True, "host": manual})
             return
         try:

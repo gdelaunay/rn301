@@ -430,12 +430,12 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
       relancez un scan ou testez une IP manuelle ci-dessous.</p>
       <div class="row">
         Découverte SSDP :
-        <button onclick="rediscover()"><i class="msi">radar</i>&nbsp;Relancer</button>
+        <button onclick="rediscover()"><i class="msi">wifi_protected_setup</i>&nbsp;Relancer</button>
         <span class="chip" id="discState"></span>
       </div>
       <div class="row">
         <input type="text" id="manualHost" placeholder="IP manuelle (ex. 192.168.1.91)" inputmode="decimal" autocomplete="off" spellcheck="false" style="flex:1;min-width:0;cursor:text">
-        <button onclick="bindManual()"><i class="msi">link</i>&nbsp;Bind</button>
+        <button onclick="bindManual()"><i class="msi">link_2</i>&nbsp;Connecter</button>
       </div>
     </div>
 
@@ -471,6 +471,7 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
 let state={}, band='FM', shuffle=false, repeat='Off', playing=false, pushMode=false;
 let ampError=false, ampErrorText='', ampErrorCode='';   // état connexion ampli
 let ampPending=false;                                    // découverte de fond en cours (ni ok, ni erreur)
+let ampBinding=false, ampBindingLabel='';                 // bind manuel/rediscover en cours (état intermédiaire)
 let ampHost='';                                          // IP bindée (si connue)
 let listEver=false, listBusySince=0, listRetry=null, listGaveUp=false;   // navigateur
 /* Mapping source (Input_Sel / liste des entrées) -> nom d'icône Material Symbols.
@@ -680,6 +681,7 @@ async function pushFile(){
    dépendent de play_info/list_info que basic_status ne renvoie pas. */
 function paintSysInfo(){
   const el=document.getElementById('sysinfo');
+  if(ampBinding){ el.textContent=ampBindingLabel||'connexion…'; return; }
   if(ampError){ el.textContent=ampErrorText||'ampli injoignable'; return; }
   if(ampPending){ el.textContent='recherche de l’ampli…'; return; }
   if(!state||Object.keys(state).length===0){ el.textContent='connexion…'; return; }
@@ -707,6 +709,17 @@ function setAmpPending(){
   paintSysInfo();
   if(helpOpen) refreshHelpState();
 }
+
+/* Bind manuel / rediscover en cours : état intermédiaire qui gèle l'affichage
+   (sysinfo + chip) et fait ignorer les snapshots du polling 4 s, pour ne pas
+   repeindre l'ANCIEN ampli « connecté » pendant la bascule. */
+function setAmpBinding(label){
+  ampBinding=true; ampBindingLabel=label||'connexion…';
+  ampError=false; ampPending=false;
+  paintSysInfo();
+  if(helpOpen) refreshHelpState();
+}
+function clearAmpBinding(){ ampBinding=false; ampBindingLabel=''; }
 
 /* 503/502 de /api/state ou /api/basic : « discovering » = neutre, le reste = erreur. */
 function handleAmpUnavailable(r, j){
@@ -746,7 +759,8 @@ function setDiscState(text, kind){
 }
 /* état courant affiché dans la carte Connexion (host bindé ou erreur) */
 function refreshHelpState(){
-  if(ampError) setDiscState(ampErrorText||'injoignable','err');
+  if(ampBinding) setDiscState(ampBindingLabel||'connexion…','');
+  else if(ampError) setDiscState(ampErrorText||'injoignable','err');
   else if(ampPending) setDiscState('recherche…','');
   else setDiscState(ampHost?('connecté · '+ampHost):'connecté','on');
   const av=$('aboutVer');
@@ -756,20 +770,31 @@ function refreshHelpState(){
 }
 
 async function rediscover(){
+  setAmpBinding('recherche…');
   setDiscState('scan…','');
   const r=await postRediscover({});
+  clearAmpBinding();
   if(r&&r.ok){ ampHost=r.host||ampHost; setDiscState(r.friendly_name||r.model||ampHost||'trouvé','on');
     clearAmpError(); setHelpNotif(false); toast('Ampli '+(r.host?'bindé @ '+r.host:'redécouvert')); refresh(); }
-  else { setDiscState((r&&r.error)||'échec','err'); setHelpNotif(true); }
+  else { setDiscState((r&&r.error)||'échec','err'); if(r&&r.error)toast(r.error); refresh(); }
 }
 async function bindManual(){
   const host=($('manualHost').value||'').trim();
   if(!host){ toast('Saisis une IP'); return; }
+  setAmpBinding('connexion à '+host+'…');
   setDiscState('bind…','');
   const r=await postRediscover({host});
+  clearAmpBinding();
   if(r&&r.ok){ ampHost=r.host||host; setDiscState(ampHost,'on');
     clearAmpError(); setHelpNotif(false); toast('Bindé @ '+ampHost); refresh(); }
-  else { setDiscState((r&&r.error)||'échec','err'); setHelpNotif(true); }
+  else {
+    // Échec : le serveur a sondé AVANT de rebinder, il a donc gardé l'ancien
+    // ampli. On ne marque PAS l'app en erreur — juste l'échec dans la carte +
+    // un toast — puis refresh() repeint l'état réel (ancien ampli ou aucun).
+    setDiscState((r&&r.error)||'échec','err');
+    if(r&&r.error) toast(r.error);
+    refresh();
+  }
 }
 /* POST /api/rediscover (SSDP ou {host}) ; renvoie le JSON ou null. Ne passe pas
    par api() : cette route est hors du dispatch état et peut répondre 503/502
@@ -791,12 +816,14 @@ async function bootstrap(){
 }
 
 async function refresh(){
+  if(ampBinding) return;          // bind en cours : on ne repeint pas par-dessus
   const sent=Date.now();          // fraîcheur conservative : ce snapshot date d'ICI
   try{
     const r=await fetch('/api/state'); const j=await r.json();
+    if(ampBinding) return;        // un bind a démarré pendant le fetch : snapshot obsolète
     if(!r.ok||j.error){ handleAmpUnavailable(r,j); return; }
     if(j.state){ clearAmpError(); setHelpNotif(false); if(helpOpen)refreshHelpState(); render(j.state,sent); }
-  }catch(e){ setAmpError('unreachable', 'serveur webapp injoignable'); }
+  }catch(e){ if(!ampBinding) setAmpError('unreachable', 'serveur webapp injoignable'); }
 }
 
 /* Boutons de source (+ pseudo-source PUSH en dernier). Extrait de render() pour
