@@ -1,0 +1,68 @@
+name: Release
+
+# Déclenché UNIQUEMENT quand un tag v* arrive sur GitHub (via le miroir Forgejo).
+# Le CI normal (.github/workflows/ci.yml) reste séparé : ici on build + publie.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write      # créer la GitHub Release + attacher les artefacts
+  id-token: write      # OIDC → PyPI Trusted Publishing (aucun token stocké)
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Si tu déclares un « environment » sur PyPI côté trusted publisher,
+    # décommente la ligne ci-dessous ET crée l'environnement `pypi` dans les
+    # settings GitHub. Sinon laisse en commentaire (publisher = repo+workflow seul).
+    # environment: pypi
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Vérifier tag == __version__
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          current="$(python -c 'import rn301; print(rn301.__version__)')"
+          if [ "$ver" != "$current" ]; then
+            echo "::error::tag '$GITHUB_REF_NAME' ne correspond pas à rn301.__version__ = '$current'"
+            exit 1
+          fi
+          echo "version cohérente : $ver"
+
+      - name: Build wheel + sdist
+        run: |
+          pip install build
+          python -m build
+
+      - name: Publier sur PyPI (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # PyPI est la cible ; pas d'index-url = https://upload.pypi.org/legacy/
+          verbose: true
+
+      - name: GitHub Release (notes = section du CHANGELOG pour cette version)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          ver="${tag#v}"
+          # on extrait UNIQUEMENT la section `## <ver> …` du CHANGELOG,
+          # jusqu'à la prochaine ligne `## ` ou la fin du fichier.
+          awk -v v="$ver" '
+            $0 ~ "^## "v {p=1}
+            p && /^## / && $0 !~ "^## "v {exit}
+            p {print}
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::warning::aucune section '## $ver' dans CHANGELOG.md — notes vides"
+          fi
+          gh release create "$tag" \
+            --title "$tag" \
+            --notes-file notes.md \
+            dist/*
