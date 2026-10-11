@@ -394,8 +394,8 @@ let listEver=false, listBusySince=0, listRetry=null, listGaveUp=false;   // navi
    Clés en MAJUSCULES ; srcIcon normalise. Repli 'input' si source inconnue. */
 const SRC_ICON={'SPOTIFY':'contactless','NET RADIO':'podcasts','SERVER':'dns','AIRPLAY':'airplay','TUNER':'radio','CD':'album','OPTICAL':'flare','COAXIAL':'adjust','LINE1':'cable','LINE2':'cable','LINE3':'cable','PUSH':'cloud_upload'};
 function srcIcon(v){return SRC_ICON[((v||'').trim().toUpperCase())]||'input';}
-/* Sources dont l'icône doit être tournée de -90° (graphic_eq = barres verticales
-   → tournées à l'horizontale pour évoquer le logo Spotify). */
+/* Sources dont l'icône doit être tournée de -90° : contactless penché = les
+   ondes du logo Spotify. */
 const SRC_ICON_ROT=new Set(['SPOTIFY']);
 function srcIconCls(v){return SRC_ICON_ROT.has((v||'').trim().toUpperCase())?' rot':'';}
 /* Ordre d'affichage des sources : celui de l'app Yamaha native (lue de droite à
