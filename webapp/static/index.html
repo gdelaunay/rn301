@@ -425,11 +425,12 @@ button.pwr,#btnPlay,#btnMute{height:40px;min-width:46px}
     <div class="card">
       <div class="lbl eyebrow">Connexion à l'ampli</div>
       <p class="help-txt">Au démarrage le serveur découvre l'ampli en SSDP (multicast UPnP) puis
-      se « binde » dessus : client YNC, push DLNA et events GENA. Si la découverte
-      échoue (ampli éteint, autre sous-réseau, multicast bloqué), relance un scan
-      ou force une IP manuelle ci-dessous.</p>
+      se « binde » dessus : client YNC, push DLNA et events GENA. <br>
+      Si la découverte échoue (ampli éteint, autre sous-réseau, multicast bloqué),
+      relancez un scan ou testez une IP manuelle ci-dessous.</p>
       <div class="row">
-        <button onclick="rediscover()"><i class="msi">radar</i>&nbsp;Relancer la découverte</button>
+        Découverte SSDP :
+        <button onclick="rediscover()"><i class="msi">radar</i>&nbsp;Relancer</button>
         <span class="chip" id="discState"></span>
       </div>
       <div class="row">

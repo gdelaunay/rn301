@@ -657,6 +657,29 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
 
+def _discover_and_bind() -> None:
+    """Scan SSDP puis bind de l'ampli — lancé en thread de fond au boot.
+
+    Tourne après l'ouverture du port HTTP pour ne pas bloquer le chargement de
+    la page : le front s'affiche en état « aucun ampli » (503 → setAmpError),
+    puis le polling 4 s recolle dès que ce thread a bindé. Réutilise exactement
+    la même chaîne que /api/rediscover (discover_one + _bind_amp).
+    """
+    print("discovery SSDP en cours…", flush=True)
+    try:
+        found = discover_one()
+    except DiscoverError as e:
+        found = None
+        print(f"discover : {e}")
+    if found:
+        label = found.get("friendly_name") or found.get("model") or "R-N301"
+        print(f"ampli découvert : {label} @ {found['host']}")
+        _bind_amp(found["host"])
+    else:
+        print("Aucun R-N301 Yamaha trouvé sur le réseau. "
+              "Allume-le puis passe /api/rediscover (ou relance le serveur).")
+
+
 def main():
     p = argparse.ArgumentParser(description="Serveur web Yamaha R-N301")
     p.add_argument("--amp", default=None,
@@ -677,23 +700,8 @@ def main():
     push_port = args.push_port
 
     host = args.amp
-    if not host:
-        print("discovery SSDP en cours…", flush=True)
-        try:
-            found = discover_one()
-        except DiscoverError as e:
-            found = None
-            print(f"discover : {e}")
-        if found:
-            host = found["host"]
-            label = found.get("friendly_name") or found.get("model") or "R-N301"
-            print(f"ampli découvert : {label} @ {host}")
-        else:
-            print("Aucun R-N301 Yamaha trouvé sur le réseau. "
-                  "Allume-le puis passe /api/rediscover (ou relance le serveur).")
-
     if host:
-        _bind_amp(host)
+        _bind_amp(host)     # IP fournie : bind immédiat, pas de scan SSDP
 
     class _QuietServer(ThreadingHTTPServer):
         """ThreadingHTTPServer qui avale le bruit des fermetures de connexions.
@@ -716,7 +724,12 @@ def main():
             super().handle_error(request, client_address)
 
     srv = _QuietServer((args.host, args.port), Handler)
-    print(f"R-N301 web: http://localhost:{args.port}  (ampli: {host or '—'})")
+    if not host:
+        # Pas d'IP : le port HTTP est déjà ouvert (la page se charge en état
+        # « aucun ampli »), la découverte tourne en tâche de fond. Dès qu'elle
+        # binde l'ampli, le polling 4 s du front recolle tout seul.
+        threading.Thread(target=_discover_and_bind, daemon=True).start()
+    print(f"R-N301 web: http://localhost:{args.port}  (ampli: {host or 'discovery…'})")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
